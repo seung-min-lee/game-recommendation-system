@@ -1,0 +1,50 @@
+name: Deploy to EC2
+
+on:
+  push:
+    branches: [main]
+
+jobs:
+  build-and-deploy:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Docker Hub 로그인
+        uses: docker/login-action@v3
+        with:
+          username: ${{ secrets.DOCKERHUB_USERNAME }}
+          password: ${{ secrets.DOCKERHUB_TOKEN }}
+
+      - name: Docker 이미지 빌드 및 푸시
+        uses: docker/build-push-action@v5
+        with:
+          context: .
+          push: true
+          tags: ${{ secrets.DOCKERHUB_USERNAME }}/gamefinder-api:latest
+
+      - name: EC2에 SSH로 배포
+        uses: appleboy/ssh-action@v1
+        with:
+          host: ${{ secrets.EC2_HOST }}
+          username: ec2-user
+          key: ${{ secrets.EC2_SSH_KEY }}
+          script: |
+            docker pull ${{ secrets.DOCKERHUB_USERNAME }}/gamefinder-api:latest
+            docker stop gamefinder-api || true
+            docker rm gamefinder-api || true
+            docker run -d \
+              --name gamefinder-api \
+              --restart always \
+              -p 5000:5000 \
+              -e STEAM_API_KEY=${{ secrets.STEAM_API_KEY }} \
+              -e REDIS_HOST=${{ secrets.REDIS_HOST }} \
+              -e DB_HOST=${{ secrets.DB_HOST }} \
+              -e DB_PASSWORD=${{ secrets.DB_PASSWORD }} \
+              -e SNOWFLAKE_ACCOUNT=${{ secrets.SNOWFLAKE_ACCOUNT }} \
+              -e SNOWFLAKE_USER=${{ secrets.SNOWFLAKE_USER }} \
+              -e SNOWFLAKE_PASSWORD=${{ secrets.SNOWFLAKE_PASSWORD }} \
+              -e AIRFLOW_BASE_URL=${{ secrets.AIRFLOW_BASE_URL }} \
+              ${{ secrets.DOCKERHUB_USERNAME }}/gamefinder-api:latest
