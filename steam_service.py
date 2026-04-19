@@ -60,11 +60,19 @@ class SteamService:
             except Exception:
                 pass
 
-        if steam_id in DUMMY_OWNED_GAMES:
-            return DUMMY_OWNED_GAMES[steam_id]
-
-        default_id = next(iter(DUMMY_OWNED_GAMES))
-        return DUMMY_OWNED_GAMES[default_id]
+        # 더미 데이터에 GAME_CATALOG 장르 정보 병합
+        source = DUMMY_OWNED_GAMES.get(steam_id) or DUMMY_OWNED_GAMES[next(iter(DUMMY_OWNED_GAMES))]
+        result = []
+        for g in source:
+            app_id = g["app_id"]
+            catalog = GAME_CATALOG.get(app_id, {})
+            result.append({
+                **g,
+                "genres": catalog.get("genres", g.get("genres", [])),
+                "header_image": catalog.get("header_image", g.get("header_image", "")),
+                "store_url": catalog.get("store_url", g.get("store_url", "")),
+            })
+        return result
 
     def get_game_detail(self, app_id: int) -> dict | None:
         info = GAME_CATALOG.get(app_id)
