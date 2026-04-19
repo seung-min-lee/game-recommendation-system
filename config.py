@@ -25,9 +25,9 @@ class Config:
     SNOWFLAKE_ACCOUNT = os.environ.get("SNOWFLAKE_ACCOUNT", "")
     SNOWFLAKE_USER = os.environ.get("SNOWFLAKE_USER", "")
     SNOWFLAKE_PASSWORD = os.environ.get("SNOWFLAKE_PASSWORD", "")
-    SNOWFLAKE_DATABASE = os.environ.get("SNOWFLAKE_DATABASE", "GAME_DW")
+    SNOWFLAKE_DATABASE = os.environ.get("SNOWFLAKE_DATABASE", "GAMEFINDER")
     SNOWFLAKE_SCHEMA = os.environ.get("SNOWFLAKE_SCHEMA", "GOLD")
-    SNOWFLAKE_WAREHOUSE = os.environ.get("SNOWFLAKE_WAREHOUSE", "COMPUTE_WH")
+    SNOWFLAKE_WAREHOUSE = os.environ.get("SNOWFLAKE_WAREHOUSE", "GAMEFINDER_WH")
     SNOWFLAKE_ROLE = os.environ.get("SNOWFLAKE_ROLE", "SYSADMIN")
 
     # Airflow REST API (EKS 내부 서비스 주소)
