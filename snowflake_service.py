@@ -18,9 +18,8 @@ class SnowflakeService:
         )
 
     def get_cf_recommendations(self, steam_id: str) -> list[dict]:
-        """Gold Layer RECOMMEND_CF 테이블에서 협업 필터링 추천 결과 조회"""
         sql = """
-            SELECT GAME_ID, GAME_NAME, SCORE, GENRES, HEADER_IMAGE, STORE_URL
+            SELECT APP_ID, GAME_NAME, SCORE, HEADER_IMAGE, STORE_URL
             FROM GOLD.RECOMMEND_CF
             WHERE STEAM_ID = %(steam_id)s
             ORDER BY SCORE DESC
@@ -29,9 +28,8 @@ class SnowflakeService:
         return self._query(sql, {"steam_id": steam_id})
 
     def get_cbf_recommendations(self, steam_id: str) -> list[dict]:
-        """Gold Layer RECOMMEND_CBF 테이블에서 콘텐츠 기반 추천 결과 조회"""
         sql = """
-            SELECT GAME_ID, GAME_NAME, SIMILARITY AS SCORE, GENRES, HEADER_IMAGE, STORE_URL
+            SELECT APP_ID, GAME_NAME, SIMILARITY AS SCORE, GENRES, HEADER_IMAGE, STORE_URL
             FROM GOLD.RECOMMEND_CBF
             WHERE STEAM_ID = %(steam_id)s
             ORDER BY SIMILARITY DESC
@@ -40,21 +38,19 @@ class SnowflakeService:
         return self._query(sql, {"steam_id": steam_id})
 
     def get_genre_trend(self, steam_id: str) -> list[dict]:
-        """Gold Layer GENRE_TREND 테이블에서 장르 트렌드 추천 조회"""
         sql = """
-            SELECT GAME_ID, GAME_NAME, TREND_SCORE AS SCORE, GENRES, HEADER_IMAGE, STORE_URL
-            FROM GOLD.GENRE_TREND
+            SELECT APP_ID, GAME_NAME, SCORE, METACRITIC, GENRES, HEADER_IMAGE, STORE_URL
+            FROM GOLD.HIDDEN_GEMS
             WHERE STEAM_ID = %(steam_id)s
-            ORDER BY TREND_SCORE DESC
+            ORDER BY SCORE DESC
             LIMIT 10
         """
         return self._query(sql, {"steam_id": steam_id})
 
     def has_recommendations(self, steam_id: str) -> bool:
-        """해당 steam_id의 추천 결과가 Gold Layer에 존재하는지 확인"""
         sql = """
             SELECT COUNT(*) AS CNT
-            FROM GOLD.RECOMMEND_CF
+            FROM GOLD.RECOMMEND_CBF
             WHERE STEAM_ID = %(steam_id)s
         """
         rows = self._query(sql, {"steam_id": steam_id})
