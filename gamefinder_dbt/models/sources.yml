@@ -1,0 +1,9 @@
+version: 2
+
+sources:
+  - name: bronze
+    database: GAMEFINDER
+    schema: BRONZE
+    tables:
+      - name: RAW_USER_GAMES
+      - name: RAW_GAME_METADATA
