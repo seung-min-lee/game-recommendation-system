@@ -54,7 +54,7 @@ class SnowflakeService:
             WHERE STEAM_ID = %(steam_id)s
         """
         rows = self._query(sql, {"steam_id": steam_id})
-        return rows[0]["CNT"] > 0 if rows else False
+        return rows[0]["cnt"] > 0 if rows else False
 
     def _query(self, sql: str, params: dict) -> list[dict]:
         try:
