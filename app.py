@@ -26,7 +26,7 @@ def _fmt(g: dict) -> dict:
         "genres":       genres,
         "score":        float(g.get("score") or 0),
         "metacritic":   g.get("metacritic"),
-        "match_percent": min(int(float(g.get("score") or 0)), 100),
+        "match_percent": g.get("metacritic") or min(int(float(g.get("score") or 0)), 100),
     }
 
 steam = SteamService()
