@@ -30,8 +30,8 @@ class Config:
     SNOWFLAKE_WAREHOUSE = os.environ.get("SNOWFLAKE_WAREHOUSE", "GAMEFINDER_WH")
     SNOWFLAKE_ROLE = os.environ.get("SNOWFLAKE_ROLE", "SYSADMIN")
 
-    # Airflow REST API (EKS 내부 서비스 주소)
-    AIRFLOW_BASE_URL = os.environ.get("AIRFLOW_BASE_URL", "http://airflow-webserver.airflow.svc.cluster.local:8080")
+    # Airflow REST API
+    AIRFLOW_BASE_URL = os.environ.get("AIRFLOW_BASE_URL", "http://3.34.197.82:8080")
     AIRFLOW_USERNAME = os.environ.get("AIRFLOW_USERNAME", "admin")
     AIRFLOW_PASSWORD = os.environ.get("AIRFLOW_PASSWORD", "admin")
     AIRFLOW_DAG_ID = os.environ.get("AIRFLOW_DAG_ID", "game_pipeline")
