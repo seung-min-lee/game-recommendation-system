@@ -9,6 +9,26 @@ from airflow_service import airflow_svc
 app = Flask(__name__)
 CORS(app)
 
+import json as _json
+
+def _fmt(g: dict) -> dict:
+    genres = g.get("genres", [])
+    if isinstance(genres, str):
+        try:
+            genres = _json.loads(genres)
+        except Exception:
+            genres = [genres]
+    return {
+        "app_id":       g.get("app_id"),
+        "name":         g.get("game_name"),
+        "header_image": g.get("header_image"),
+        "store_url":    g.get("store_url"),
+        "genres":       genres,
+        "score":        float(g.get("score") or 0),
+        "metacritic":   g.get("metacritic"),
+        "match_percent": min(int(float(g.get("score") or 0)), 100),
+    }
+
 steam = SteamService()
 recommender = GameRecommender()
 
@@ -81,9 +101,9 @@ def get_recommendations(steam_id):
     try:
         if snowflake_svc.has_recommendations(steam_id):
             result = {
-                "genre_based":  snowflake_svc.get_cbf_recommendations(steam_id),
-                "collab_based": snowflake_svc.get_cf_recommendations(steam_id),
-                "hidden_gems":  snowflake_svc.get_genre_trend(steam_id),
+                "genre_based":  [_fmt(g) for g in snowflake_svc.get_cbf_recommendations(steam_id)],
+                "collab_based": [_fmt(g) for g in snowflake_svc.get_cf_recommendations(steam_id)],
+                "hidden_gems":  [_fmt(g) for g in snowflake_svc.get_genre_trend(steam_id)],
                 "source": "snowflake",
             }
             cache.set(cache_key, result)
@@ -131,9 +151,9 @@ def get_recommend_status(steam_id):
         if state == "success":
             cache_key = f"recommend:{steam_id}"
             result = {
-                "genre_based":  snowflake_svc.get_cbf_recommendations(steam_id),
-                "collab_based": snowflake_svc.get_cf_recommendations(steam_id),
-                "hidden_gems":  snowflake_svc.get_genre_trend(steam_id),
+                "genre_based":  [_fmt(g) for g in snowflake_svc.get_cbf_recommendations(steam_id)],
+                "collab_based": [_fmt(g) for g in snowflake_svc.get_cf_recommendations(steam_id)],
+                "hidden_gems":  [_fmt(g) for g in snowflake_svc.get_genre_trend(steam_id)],
                 "source": "snowflake",
             }
             cache.set(cache_key, result)

@@ -64,7 +64,7 @@ class SnowflakeService:
             rows = cursor.fetchall()
             cursor.close()
             conn.close()
-            return [dict(r) for r in rows]
+            return [{k.lower(): v for k, v in dict(r).items()} for r in rows]
         except Exception as e:
             raise RuntimeError(f"Snowflake 쿼리 실패: {e}")
 
