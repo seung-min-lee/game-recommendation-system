@@ -178,6 +178,36 @@ GAME_CATALOG = {
         "metacritic": 84,
         "price": 59900,
     },
+    1623730: {
+        "app_id": 1623730,
+        "name": "Palworld",
+        "genres": ["Action", "Adventure", "Survival"],
+        "tags": ["Survival", "Open World", "Crafting", "Multiplayer", "Action"],
+        "header_image": "https://cdn.akamai.steamstatic.com/steam/apps/1623730/header.jpg",
+        "store_url": "https://store.steampowered.com/app/1623730",
+        "metacritic": 73,
+        "price": 29900,
+    },
+    648800: {
+        "app_id": 648800,
+        "name": "Raft",
+        "genres": ["Survival", "Adventure", "Indie"],
+        "tags": ["Survival", "Crafting", "Multiplayer", "Open World", "Indie"],
+        "header_image": "https://cdn.akamai.steamstatic.com/steam/apps/648800/header.jpg",
+        "store_url": "https://store.steampowered.com/app/648800",
+        "metacritic": 0,
+        "price": 19900,
+    },
+    578080: {
+        "app_id": 578080,
+        "name": "PUBG: BATTLEGROUNDS",
+        "genres": ["Action", "Battle Royale", "Shooter"],
+        "tags": ["Battle Royale", "Multiplayer", "Survival", "Shooter", "Third-Person"],
+        "header_image": "https://cdn.akamai.steamstatic.com/steam/apps/578080/header.jpg",
+        "store_url": "https://store.steampowered.com/app/578080",
+        "metacritic": 86,
+        "price": 0,
+    },
 }
 
 # ─────────────────────────────────────────
