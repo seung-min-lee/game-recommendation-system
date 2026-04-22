@@ -1,18 +1,19 @@
 from __future__ import annotations
-import os
 import requests
 from dummy_data import GAME_CATALOG, DUMMY_OWNED_GAMES
+from config import config
 
-STEAM_API_KEY = os.environ.get("STEAM_API_KEY", "")
+def _get_api_key() -> str:
+    return config.STEAM_API_KEY
 
 
 class SteamService:
 
     def get_user_summary(self, steam_id: str) -> dict | None:
-        if STEAM_API_KEY:
+        if _get_api_key():
             try:
                 url = "https://api.steampowered.com/ISteamUser/GetPlayerSummaries/v2/"
-                res = requests.get(url, params={"key": STEAM_API_KEY, "steamids": steam_id}, timeout=5)
+                res = requests.get(url, params={"key": _get_api_key(), "steamids": steam_id}, timeout=5)
                 players = res.json().get("response", {}).get("players", [])
                 if players:
                     p = players[0]
@@ -31,11 +32,11 @@ class SteamService:
         }
 
     def get_owned_games(self, steam_id: str) -> list[dict]:
-        if STEAM_API_KEY:
+        if _get_api_key():
             try:
                 url = "https://api.steampowered.com/IPlayerService/GetOwnedGames/v1/"
                 res = requests.get(url, params={
-                    "key": STEAM_API_KEY,
+                    "key": _get_api_key(),
                     "steamid": steam_id,
                     "include_appinfo": True,
                     "include_played_free_games": True,
