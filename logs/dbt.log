@@ -1,0 +1,78 @@
+[0m03:26:25.980794 [debug] [MainThread]: Sending event: {'category': 'dbt', 'action': 'invocation', 'label': 'start', 'context': [<snowplow_tracker.self_describing_json.SelfDescribingJson object at 0x0000028C76C6C9A0>, <snowplow_tracker.self_describing_json.SelfDescribingJson object at 0x0000028C771C5370>, <snowplow_tracker.self_describing_json.SelfDescribingJson object at 0x0000028C7A151DF0>]}
+
+
+============================== 03:26:25.986776 | be499ceb-4c9d-472d-96e5-3324aa7b5efb ==============================
+[0m03:26:25.986776 [info ] [MainThread]: Running with dbt=1.8.7
+[0m03:26:25.987778 [debug] [MainThread]: running dbt with arguments {'printer_width': '80', 'indirect_selection': 'eager', 'write_json': 'True', 'log_cache_events': 'False', 'partial_parse': 'True', 'cache_selected_only': 'False', 'profiles_dir': 'C:\\Users\\이승민\\.dbt', 'version_check': 'True', 'fail_fast': 'False', 'log_path': 'logs', 'debug': 'False', 'warn_error': 'None', 'use_colors': 'True', 'use_experimental_parser': 'False', 'empty': 'None', 'quiet': 'False', 'no_print': 'None', 'log_format': 'default', 'static_parser': 'True', 'warn_error_options': 'WarnErrorOptions(include=[], exclude=[])', 'invocation_command': 'dbt init gamefinder_dbt', 'target_path': 'None', 'introspect': 'True', 'send_anonymous_usage_stats': 'True'}
+[0m03:26:26.015051 [warn ] [MainThread]: [ConfigFolderDirectory]: Unable to parse logging event dictionary. Failed to parse dir field: expected string or bytes-like object.. Dictionary: {'dir': WindowsPath('C:/Users/이승민/.dbt')}
+[0m03:26:26.015051 [info ] [MainThread]: Creating dbt configuration folder at 
+[0m03:26:26.022064 [debug] [MainThread]: Starter project path: C:\Users\이승민\AppData\Roaming\Python\Python38\site-packages\dbt\include\starter_project
+[0m03:26:26.125327 [info ] [MainThread]: 
+Your new dbt project "gamefinder_dbt" was created!
+
+For more information on how to configure the profiles.yml file,
+please consult the dbt documentation here:
+
+  https://docs.getdbt.com/docs/configure-your-profile
+
+One more thing:
+
+Need help? Don't hesitate to reach out to us via GitHub issues or on Slack:
+
+  https://community.getdbt.com/
+
+Happy modeling!
+
+[0m03:26:26.125327 [info ] [MainThread]: Setting up your profile.
+[0m03:27:01.165981 [error] [MainThread]: Encountered an error:
+deprecated() got an unexpected keyword argument 'name'
+[0m03:27:01.178985 [error] [MainThread]: Traceback (most recent call last):
+  File "C:\Users\이승민\AppData\Roaming\Python\Python38\site-packages\dbt\cli\requires.py", line 138, in wrapper
+    result, success = func(*args, **kwargs)
+  File "C:\Users\이승민\AppData\Roaming\Python\Python38\site-packages\dbt\cli\requires.py", line 101, in wrapper
+    return func(*args, **kwargs)
+  File "C:\Users\이승민\AppData\Roaming\Python\Python38\site-packages\dbt\cli\main.py", line 470, in init
+    results = task.run()
+  File "C:\Users\이승민\AppData\Roaming\Python\Python38\site-packages\dbt\task\init.py", line 347, in run
+    self.setup_profile(profile_name)
+  File "C:\Users\이승민\AppData\Roaming\Python\Python38\site-packages\dbt\task\init.py", line 263, in setup_profile
+    self.create_profile_from_target(adapter, profile_name=profile_name)
+  File "C:\Users\이승민\AppData\Roaming\Python\Python38\site-packages\dbt\task\init.py", line 173, in create_profile_from_target
+    load_plugin(adapter)
+  File "C:\Users\이승민\AppData\Roaming\Python\Python38\site-packages\dbt\adapters\factory.py", line 239, in load_plugin
+    return FACTORY.load_plugin(name)
+  File "C:\Users\이승민\AppData\Roaming\Python\Python38\site-packages\dbt\adapters\factory.py", line 68, in load_plugin
+    mod: Any = import_module("." + name, "dbt.adapters")
+  File "c:\programdata\anaconda3\lib\importlib\__init__.py", line 127, in import_module
+    return _bootstrap._gcd_import(name[level:], package, level)
+  File "<frozen importlib._bootstrap>", line 1014, in _gcd_import
+  File "<frozen importlib._bootstrap>", line 991, in _find_and_load
+  File "<frozen importlib._bootstrap>", line 975, in _find_and_load_unlocked
+  File "<frozen importlib._bootstrap>", line 671, in _load_unlocked
+  File "<frozen importlib._bootstrap_external>", line 783, in exec_module
+  File "<frozen importlib._bootstrap>", line 219, in _call_with_frames_removed
+  File "C:\Users\이승민\AppData\Roaming\Python\Python38\site-packages\dbt\adapters\snowflake\__init__.py", line 2, in <module>
+    from dbt.adapters.snowflake.connections import SnowflakeConnectionManager  # noqa
+  File "C:\Users\이승민\AppData\Roaming\Python\Python38\site-packages\dbt\adapters\snowflake\connections.py", line 19, in <module>
+    import snowflake.connector
+  File "C:\Users\이승민\AppData\Roaming\Python\Python38\site-packages\snowflake\connector\__init__.py", line 19, in <module>
+    from .connection import SnowflakeConnection
+  File "C:\Users\이승민\AppData\Roaming\Python\Python38\site-packages\snowflake\connector\connection.py", line 36, in <module>
+    from .auth import (
+  File "C:\Users\이승민\AppData\Roaming\Python\Python38\site-packages\snowflake\connector\auth\__init__.py", line 7, in <module>
+    from ._auth import Auth, get_public_key_fingerprint, get_token_from_private_key
+  File "C:\Users\이승민\AppData\Roaming\Python\Python38\site-packages\snowflake\connector\auth\_auth.py", line 56, in <module>
+    from ..network import (
+  File "C:\Users\이승민\AppData\Roaming\Python\Python38\site-packages\snowflake\connector\network.py", line 21, in <module>
+    import OpenSSL.SSL
+  File "C:\Users\이승민\AppData\Roaming\Python\Python38\site-packages\OpenSSL\__init__.py", line 8, in <module>
+    from OpenSSL import SSL, crypto
+  File "C:\Users\이승민\AppData\Roaming\Python\Python38\site-packages\OpenSSL\SSL.py", line 42, in <module>
+    from OpenSSL.crypto import (
+  File "C:\Users\이승민\AppData\Roaming\Python\Python38\site-packages\OpenSSL\crypto.py", line 2395, in <module>
+    utils.deprecated(
+TypeError: deprecated() got an unexpected keyword argument 'name'
+
+[0m03:27:01.180982 [debug] [MainThread]: Command `dbt init` failed at 03:27:01.180982 after 35.26 seconds
+[0m03:27:01.180982 [debug] [MainThread]: Sending event: {'category': 'dbt', 'action': 'invocation', 'label': 'end', 'context': [<snowplow_tracker.self_describing_json.SelfDescribingJson object at 0x0000028C76C6C9A0>, <snowplow_tracker.self_describing_json.SelfDescribingJson object at 0x0000028C771C5370>, <snowplow_tracker.self_describing_json.SelfDescribingJson object at 0x0000028C7A3FDA90>]}
+[0m03:27:01.181983 [debug] [MainThread]: Flushing usage events
