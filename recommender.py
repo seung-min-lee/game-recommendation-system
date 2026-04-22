@@ -123,13 +123,17 @@ class GameRecommender:
                 genre_weight[genre] += weight
 
         # 미소유 게임 점수 계산
+        top_genre = max(genre_weight, key=genre_weight.get) if genre_weight else ""
         candidates = []
         for app_id, info in GAME_CATALOG.items():
             if app_id in owned_ids:
                 continue
+            matched = [g for g in info.get("genres", []) if genre_weight.get(g, 0) > 0]
             score = sum(genre_weight.get(g, 0) for g in info.get("genres", []))
             if score > 0:
                 match_pct = self._to_match_percent(score, max_score=1.5)
+                genre_str = " · ".join(matched[:2]) if matched else top_genre
+                reason = f"당신의 {genre_str} 플레이 패턴과 일치"
                 candidates.append({
                     "app_id": app_id,
                     "name": info["name"],
@@ -137,6 +141,7 @@ class GameRecommender:
                     "header_image": info["header_image"],
                     "store_url": info["store_url"],
                     "match_percent": match_pct,
+                    "reason": reason,
                     "score": score,
                 })
 
@@ -188,6 +193,17 @@ class GameRecommender:
                 if game["app_id"] not in owned_ids:
                     rec_scores[game["app_id"]] += sim
 
+        # 유사 유저 수 집계 (reason용)
+        game_sim_users: dict[int, int] = defaultdict(int)
+        for _, _, other_games in similarities[:5]:
+            for game in other_games:
+                if game["app_id"] not in owned_ids:
+                    game_sim_users[game["app_id"]] += 1
+        fallback = not any(
+            len({g["app_id"] for g in og} & owned_ids) > 0
+            for _, _, og in similarities
+        )
+
         # 점수 → 카드 변환
         candidates = []
         for app_id, score in rec_scores.items():
@@ -195,6 +211,11 @@ class GameRecommender:
             if not info:
                 continue
             match_pct = self._to_match_percent(score, max_score=2.0)
+            n_users = game_sim_users.get(app_id, 1)
+            if fallback:
+                reason = f"취향이 비슷한 유저 {n_users}명이 즐겨한 게임 (장르 유사도 기반)"
+            else:
+                reason = f"취향이 비슷한 유저 {n_users}명이 즐겨한 게임"
             candidates.append({
                 "app_id": app_id,
                 "name": info["name"],
@@ -202,6 +223,7 @@ class GameRecommender:
                 "header_image": info["header_image"],
                 "store_url": info["store_url"],
                 "match_percent": match_pct,
+                "reason": reason,
                 "score": score,
             })
 
@@ -238,6 +260,10 @@ class GameRecommender:
             price_bonus = 0.3 if info.get("price", 99999) == 0 else 0
             score = genre_overlap * (metacritic / 100) + price_bonus
             match_pct = self._to_match_percent(score, max_score=3.0)
+            common = sorted(top_genres & set(info.get("genres", [])))
+            genre_str = " · ".join(common[:2]) if common else ""
+            price_str = "무료" if info.get("price", 0) == 0 else f"₩{info['price']:,}"
+            reason = f"MC {metacritic}점 고평점 · {genre_str} · {price_str}"
             candidates.append({
                 "app_id": app_id,
                 "name": info["name"],
@@ -247,6 +273,7 @@ class GameRecommender:
                 "match_percent": match_pct,
                 "metacritic": metacritic,
                 "price": info.get("price", 0),
+                "reason": reason,
                 "score": score,
             })
 
@@ -298,6 +325,8 @@ class GameRecommender:
                 continue
             # 점수를 60~99 범위 일치율로 변환
             match_pct = int(60 + ((score - min_score) / score_range) * 39)
+            genre_str = " · ".join(info.get("genres", [])[:2])
+            reason = f"그래프 신경망(LightGCN)이 분석한 협업 추천 · {genre_str}"
             candidates.append({
                 "app_id": app_id,
                 "name": info["name"],
@@ -306,6 +335,7 @@ class GameRecommender:
                 "store_url": info["store_url"],
                 "match_percent": match_pct,
                 "metacritic": info.get("metacritic"),
+                "reason": reason,
             })
         return candidates
 

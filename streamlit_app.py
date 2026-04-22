@@ -137,7 +137,7 @@ def _get_recs(steam_id, owned_games):
 
 def _render_carousel(games: list):
     html = _carousel_html(games)
-    components.html(html, height=300, scrolling=False)
+    components.html(html, height=360, scrolling=False)
 
 
 def _carousel_html(games: list) -> str:
@@ -145,29 +145,36 @@ def _carousel_html(games: list) -> str:
         return '<p style="color:#b3b3b3;padding:20px 0;">추천 결과가 없습니다.</p>'
     cards = ""
     for g in games:
-        name        = (g.get("name") or "Unknown").replace("'", "&#39;")
-        img         = g.get("header_image") or "https://via.placeholder.com/280x150/181818/555?text=No+Image"
-        match_pct   = g.get("match_percent", 0)
-        store_url   = g.get("store_url", "#")
-        metacritic  = g.get("metacritic")
-        mc_html     = f'<span style="background:#E50914;color:#fff;border-radius:3px;padding:1px 6px;font-size:0.75rem;font-weight:bold;">MC {metacritic}</span>' if metacritic else ""
+        name       = (g.get("name") or "Unknown").replace("'", "&#39;")
+        img        = g.get("header_image") or "https://via.placeholder.com/280x150/181818/555?text=No+Image"
+        match_pct  = g.get("match_percent", 0)
+        store_url  = g.get("store_url", "#")
+        metacritic = g.get("metacritic")
+        reason     = g.get("reason", "")
+        mc_html    = f'<span style="background:#E50914;color:#fff;border-radius:3px;padding:1px 6px;font-size:0.72rem;font-weight:bold;">MC {metacritic}</span>' if metacritic else ""
+        reason_html = (
+            f'<p style="color:#a0a0b0;font-size:0.72rem;margin:5px 0 0;'
+            f'line-height:1.35;border-top:1px solid #2a2a2a;padding-top:5px;">'
+            f'🤖 {reason}</p>'
+        ) if reason else ""
         cards += f"""
         <div onclick="window.open('{store_url}','_blank')" style="
             background:#181818; border-radius:8px; overflow:hidden;
             cursor:pointer; width:240px; flex:0 0 auto; scroll-snap-align:start;
             transition:transform 0.3s,box-shadow 0.3s;
-            " onmouseover="this.style.transform='scale(1.08)';this.style.boxShadow='0 15px 30px rgba(0,0,0,0.7)';this.style.zIndex='10'"
+            " onmouseover="this.style.transform='scale(1.06)';this.style.boxShadow='0 15px 30px rgba(0,0,0,0.7)';this.style.zIndex='10'"
                onmouseout="this.style.transform='scale(1)';this.style.boxShadow='none';this.style.zIndex='1'">
             <img src="{img}" style="width:100%;height:135px;object-fit:cover;"
                  onerror="this.src='https://via.placeholder.com/240x135/181818/555?text=No+Image'">
             <div style="padding:12px;">
-                <p style="color:#fff;font-size:0.95rem;font-weight:bold;margin-bottom:8px;
+                <p style="color:#fff;font-size:0.93rem;font-weight:bold;margin:0 0 6px;
                            white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">{name}</p>
                 <div style="display:flex;justify-content:space-between;align-items:center;">
-                    <span style="color:#46d369;font-weight:bold;font-size:0.9rem;">{match_pct}% 일치</span>
+                    <span style="color:#46d369;font-weight:bold;font-size:0.88rem;">{match_pct}% 일치</span>
                     {mc_html}
                 </div>
-                <p style="color:#E50914;font-size:0.8rem;margin-top:6px;font-weight:bold;">스토어 이동 ➔</p>
+                <p style="color:#E50914;font-size:0.78rem;margin:5px 0 0;font-weight:bold;">스토어 이동 ➔</p>
+                {reason_html}
             </div>
         </div>"""
     return f"""
