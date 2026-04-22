@@ -149,13 +149,15 @@ class GameRecommender:
     def _collab_based(self, steam_id: str, owned_ids: set) -> list[dict]:
         """
         로직:
-          1. 모든 더미 유저와 현재 유저 간의 Jaccard 유사도 계산
-          2. 가장 유사한 유저들의 게임 목록에서 내가 미소유한 게임 추출
-          3. 유사도 합산이 높은 게임 순으로 반환
-        
-        ★ 실제 서비스 확장 시: 더미 데이터 대신 DB에 저장된 유저 데이터를 사용
+          1. 현재 유저와 더미 유저 간 Jaccard 유사도(게임 중복) 계산
+          2. 겹치는 게임이 없으면 장르 벡터 코사인 유사도로 폴백
+          3. 가장 유사한 유저들이 보유한 미소유 게임을 유사도 가중치로 집계
         """
-        # 유사 유저 계산 (자기 자신 제외)
+        # 현재 유저의 장르 프로필 (폴백용)
+        user_genre_set: set[str] = set()
+        for app_id in owned_ids:
+            user_genre_set.update(GAME_CATALOG.get(app_id, {}).get("genres", []))
+
         similarities = []
         for other_id, other_games in DUMMY_OWNED_GAMES.items():
             if other_id == steam_id:
@@ -165,11 +167,23 @@ class GameRecommender:
             if jaccard > 0:
                 similarities.append((other_id, jaccard, other_games))
 
+        # 겹치는 게임이 없으면 장르 유사도(Jaccard)로 폴백
+        if not similarities:
+            for other_id, other_games in DUMMY_OWNED_GAMES.items():
+                if other_id == steam_id:
+                    continue
+                other_genre_set: set[str] = set()
+                for g in other_games:
+                    other_genre_set.update(GAME_CATALOG.get(g["app_id"], {}).get("genres", []))
+                genre_sim = self._jaccard_similarity(user_genre_set, other_genre_set)
+                if genre_sim > 0:
+                    similarities.append((other_id, genre_sim * 0.6, other_games))
+
         similarities.sort(key=lambda x: x[1], reverse=True)
 
         # 추천 점수 집계 (유사도 가중치 합산)
         rec_scores: dict[int, float] = defaultdict(float)
-        for _, sim, other_games in similarities[:5]:  # 상위 5명만 사용
+        for _, sim, other_games in similarities[:5]:
             for game in other_games:
                 if game["app_id"] not in owned_ids:
                     rec_scores[game["app_id"]] += sim
