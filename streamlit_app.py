@@ -94,6 +94,7 @@ for key, default in [
     ("user", None),
     ("stats", None),
     ("recs", None),
+    ("owned_games", []),
 ]:
     if key not in st.session_state:
         st.session_state[key] = default
@@ -163,6 +164,140 @@ def _game_card(game: dict):
     st.markdown(html, unsafe_allow_html=True)
 
 
+# ── LightGCN 그래프 시각화 ────────────────────────────────────────────────────
+def _build_lightgcn_graph(steam_id: str, owned_games: list, rec_games: list) -> go.Figure:
+    from dummy_data import DUMMY_OWNED_GAMES, GAME_CATALOG
+
+    # 전체 인터랙션 수집 (더미 유저 + 현재 유저)
+    all_interactions: dict = {}
+    for uid, games in DUMMY_OWNED_GAMES.items():
+        all_interactions[uid] = {g["app_id"]: g.get("playtime_minutes", 1) for g in games}
+    all_interactions[steam_id] = {g["app_id"]: g.get("playtime_minutes", 1) for g in owned_games}
+
+    users   = list(all_interactions.keys())
+    game_ids = sorted({aid for games in all_interactions.values() for aid in games})
+
+    owned_ids = {g["app_id"] for g in owned_games}
+    rec_ids   = {g["app_id"] for g in rec_games}
+
+    n_u = len(users)
+    n_g = len(game_ids)
+
+    # 이분 그래프 레이아웃: 유저 왼쪽(x=0), 게임 오른쪽(x=1)
+    user_pos  = {u: (0.0, i / max(n_u - 1, 1)) for i, u in enumerate(users)}
+    game_pos  = {g: (1.0, i / max(n_g - 1, 1)) for i, g in enumerate(game_ids)}
+
+    import math
+    fig = go.Figure()
+
+    # ── 엣지 ──────────────────────────────────────────────────────────────────
+    # 추천 엣지(초록)와 일반 엣지(회색) 분리
+    for uid, games in all_interactions.items():
+        ux, uy = user_pos[uid]
+        for aid, playtime in games.items():
+            gx, gy = game_pos[aid]
+            is_current = uid == steam_id
+            is_rec     = aid in rec_ids
+            color  = "rgba(87,242,135,0.6)"  if (is_current and is_rec)  else \
+                     "rgba(254,215,92,0.5)"  if is_current                else \
+                     "rgba(88,101,242,0.2)"
+            width  = 2.5 if is_current else 0.8
+            fig.add_trace(go.Scatter(
+                x=[ux, gx, None], y=[uy, gy, None],
+                mode="lines",
+                line=dict(width=width, color=color),
+                hoverinfo="none",
+                showlegend=False,
+            ))
+
+    # ── 유저 노드 ─────────────────────────────────────────────────────────────
+    for uid in users:
+        ux, uy = user_pos[uid]
+        is_me   = uid == steam_id
+        label   = "👤 나 (현재 유저)" if is_me else f"User_{uid[-4:]}"
+        color   = "#eb459e" if is_me else "#5865f2"
+        size    = 22 if is_me else 14
+        fig.add_trace(go.Scatter(
+            x=[ux], y=[uy],
+            mode="markers+text",
+            marker=dict(size=size, color=color, line=dict(width=2, color="white")),
+            text=[label],
+            textposition="middle left",
+            textfont=dict(size=12 if is_me else 10, color="white"),
+            hovertemplate=f"<b>{label}</b><br>게임 수: {len(all_interactions[uid])}<extra></extra>",
+            showlegend=False,
+        ))
+
+    # ── 게임 노드 ─────────────────────────────────────────────────────────────
+    for aid in game_ids:
+        gx, gy = game_pos[aid]
+        info   = GAME_CATALOG.get(aid, {})
+        name   = info.get("name", f"Game_{aid}")
+        genres = ", ".join(info.get("genres", [])[:2])
+
+        if aid in rec_ids:
+            color, symbol, size = "#57f287", "star", 16
+            label = f"⭐ {name[:16]}"
+        elif aid in owned_ids:
+            color, symbol, size = "#fee75c", "square", 13
+            label = f"🎮 {name[:16]}"
+        else:
+            color, symbol, size = "#6b7280", "circle", 10
+            label = name[:16]
+
+        fig.add_trace(go.Scatter(
+            x=[gx], y=[gy],
+            mode="markers+text",
+            marker=dict(size=size, color=color, symbol=symbol,
+                        line=dict(width=1, color="white")),
+            text=[label],
+            textposition="middle right",
+            textfont=dict(size=9, color="white"),
+            hovertemplate=f"<b>{name}</b><br>장르: {genres}<extra></extra>",
+            showlegend=False,
+        ))
+
+    # ── 범례 (더미 trace) ─────────────────────────────────────────────────────
+    for label, color, symbol in [
+        ("현재 유저",    "#eb459e", "circle"),
+        ("다른 유저",    "#5865f2", "circle"),
+        ("추천 게임 ⭐", "#57f287", "star"),
+        ("보유 게임",    "#fee75c", "square"),
+        ("기타 게임",    "#6b7280", "circle"),
+    ]:
+        fig.add_trace(go.Scatter(
+            x=[None], y=[None], mode="markers",
+            marker=dict(size=10, color=color, symbol=symbol),
+            name=label, showlegend=True,
+        ))
+
+    fig.update_layout(
+        paper_bgcolor="rgba(0,0,0,0)",
+        plot_bgcolor="rgba(14,17,23,1)",
+        font_color="white",
+        height=520,
+        margin=dict(l=160, r=200, t=10, b=10),
+        xaxis=dict(showgrid=False, zeroline=False, showticklabels=False,
+                   range=[-0.3, 1.3]),
+        yaxis=dict(showgrid=False, zeroline=False, showticklabels=False),
+        legend=dict(
+            bgcolor="rgba(26,29,46,0.9)",
+            bordercolor="#2d3250",
+            borderwidth=1,
+            font=dict(color="white", size=11),
+        ),
+        annotations=[
+            dict(x=0.0, y=1.05, xref="paper", yref="paper",
+                 text="<b>유저</b>", showarrow=False,
+                 font=dict(size=13, color="#8b8fa8")),
+            dict(x=1.0, y=1.05, xref="paper", yref="paper",
+                 text="<b>게임</b>", showarrow=False,
+                 font=dict(size=13, color="#8b8fa8")),
+        ],
+    )
+    return fig
+
+
 # ── 페이지: 로그인 ────────────────────────────────────────────────────────────
 def page_login():
     st.markdown("<br>" * 2, unsafe_allow_html=True)
@@ -208,6 +343,7 @@ def page_login():
                     user=user,
                     stats=stats,
                     recs=recs,
+                    owned_games=owned,
                     page="dashboard",
                 )
                 st.rerun()
@@ -368,7 +504,27 @@ def page_recommendations():
             unsafe_allow_html=True,
         )
         st.markdown("<br>", unsafe_allow_html=True)
+
         games = recs.get("graph_based", [])
+
+        # 유저-게임 이분 그래프 시각화
+        st.markdown("#### 유저-게임 상호작용 그래프")
+        st.markdown(
+            '<p style="color:#8b8fa8;font-size:13px;">'
+            '⭐ 초록 별 = LightGCN 추천 게임 &nbsp;|&nbsp; '
+            '🟡 노랑 = 현재 보유 게임 &nbsp;|&nbsp; '
+            '엣지 굵기 = 플레이타임 강도</p>',
+            unsafe_allow_html=True,
+        )
+        fig_graph = _build_lightgcn_graph(
+            st.session_state.steam_id,
+            st.session_state.owned_games,
+            games,
+        )
+        st.plotly_chart(fig_graph, use_container_width=True)
+
+        st.markdown("---")
+        st.markdown("#### 추천 결과")
         if games:
             cols = st.columns(2)
             for i, g in enumerate(games):
