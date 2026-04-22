@@ -101,13 +101,15 @@ for key, default in [
     ("stats", None),
     ("recs", None),
     ("owned_games", []),
+    ("friends_games", {}),   # {friend_id: [games]} — 실제 스팀 친구 데이터
+    ("friends_count", 0),
 ]:
     if key not in st.session_state:
         st.session_state[key] = default
 
 
 # ── 공통 유틸 ─────────────────────────────────────────────────────────────────
-def _get_recs(steam_id, owned_games):
+def _get_recs(steam_id, owned_games, friends_games=None):
     if _snowflake_ok:
         try:
             if snowflake_svc.has_recommendations(steam_id):
@@ -132,7 +134,10 @@ def _get_recs(steam_id, owned_games):
                 }
         except Exception:
             pass
-    return {**recommender.get_recommendations(steam_id, owned_games), "source": "local"}
+    return {
+        **recommender.get_recommendations(steam_id, owned_games, real_users=friends_games or {}),
+        "source": "local",
+    }
 
 
 def _render_carousel(games: list):
@@ -326,19 +331,28 @@ def page_login():
             if not steam_id or not steam_id.strip():
                 st.error("스팀 ID를 입력해주세요.")
                 return
-            with st.spinner("분석 중..."):
-                user   = steam.get_user_summary(steam_id.strip())
-                owned  = steam.get_owned_games(steam_id.strip())
+            sid = steam_id.strip()
+            with st.spinner("게임 데이터 불러오는 중..."):
+                user  = steam.get_user_summary(sid)
+                owned = steam.get_owned_games(sid)
                 if not owned:
                     st.error("게임 데이터를 찾을 수 없습니다.")
                     return
-                stats  = recommender.compute_stats(owned)
-                recs   = _get_recs(steam_id.strip(), owned)
-                st.session_state.update(
-                    steam_id=steam_id.strip(), user=user,
-                    stats=stats, recs=recs, owned_games=owned, page="dashboard",
-                )
-                st.rerun()
+                stats = recommender.compute_stats(owned)
+
+            with st.spinner("스팀 친구 데이터 수집 중... (친구 목록 비공개 시 생략)"):
+                friends_games = steam.get_friends_games(sid, max_friends=20)
+                friends_count = len(friends_games)
+
+            with st.spinner("AI 추천 생성 중..."):
+                recs = _get_recs(sid, owned, friends_games)
+
+            st.session_state.update(
+                steam_id=sid, user=user, stats=stats, recs=recs,
+                owned_games=owned, friends_games=friends_games,
+                friends_count=friends_count, page="dashboard",
+            )
+            st.rerun()
 
     st.markdown("""
     <div style="text-align:center;color:#737373;font-size:0.8rem;margin-top:40px;">
@@ -438,12 +452,26 @@ def page_recommendations():
     username = (st.session_state.user or {}).get("username", "Unknown")
 
     # 헤더
+    friends_count = st.session_state.get("friends_count", 0)
+    if friends_count > 0:
+        data_source_html = (
+            f'<span style="background:#1a472a;color:#46d369;border-radius:4px;'
+            f'padding:2px 10px;font-size:0.82rem;font-weight:bold;margin-left:12px;">'
+            f'✅ 스팀 친구 {friends_count}명 실제 데이터 사용</span>'
+        )
+    else:
+        data_source_html = (
+            '<span style="background:#2a2a2a;color:#b3b3b3;border-radius:4px;'
+            'padding:2px 10px;font-size:0.82rem;margin-left:12px;">'
+            '친구 목록 비공개 — 유사 유저 패턴 기반</span>'
+        )
+
     hc1, hc2 = st.columns([7, 1])
     with hc1:
         st.markdown(f"""
         <div style="border-bottom:2px solid #2f2f2f;padding-bottom:20px;margin-bottom:40px;">
             <h1 style="font-size:2.2rem;font-weight:800;">AI 맞춤 추천 게임</h1>
-            <p style="color:#b3b3b3;">{username}님을 위한 게임 추천</p>
+            <p style="color:#b3b3b3;">{username}님을 위한 게임 추천 {data_source_html}</p>
         </div>
         """, unsafe_allow_html=True)
     with hc2:

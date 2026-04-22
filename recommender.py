@@ -1,11 +1,3 @@
-# recommender.py - 게임 추천 알고리즘
-#
-# 구현된 알고리즘:
-#   1. 장르 기반 콘텐츠 필터링  : 유저가 많이 플레이한 장르와 겹치는 미소유 게임 추천
-#   2. 아이템 기반 협업 필터링  : 유사 유저의 플레이 패턴을 분석해 추천
-#   3. 숨겨진 명작 추천         : 플레이타임은 적지만 장르가 맞는 고평점 게임 추천
-#   4. LightGCN                 : 유저-게임 그래프 컨볼루션 기반 딥러닝 추천
-
 from __future__ import annotations
 from collections import defaultdict
 from dummy_data import GAME_CATALOG, DUMMY_OWNED_GAMES
@@ -14,35 +6,18 @@ from lightgcn import LightGCN
 
 class GameRecommender:
 
-    # ─────────────────────────────────────────
-    # 통계 계산 (대시보드용)
-    # ─────────────────────────────────────────
     def compute_stats(self, owned_games: list[dict]) -> dict:
-        """
-        프론트엔드 dashboard.html 차트에 필요한 통계 딕셔너리 반환
-
-        반환 구조:
-        {
-            "total_playtime_hours": float,
-            "total_games": int,
-            "user_summary": { ... },
-            "genre_distribution": { "장르명": 플레이타임(분), ... },
-            "top5_games": [ { name, playtime_hours }, ... ]
-        }
-        """
         if not owned_games:
             return {}
 
         total_minutes = sum(g.get("playtime_minutes", 0) for g in owned_games)
 
-        # 장르별 플레이타임 집계
         genre_minutes: dict[str, int] = defaultdict(int)
         for game in owned_games:
             minutes = game.get("playtime_minutes", 0)
             for genre in game.get("genres", []):
                 genre_minutes[genre] += minutes
 
-        # Top 5 게임 (플레이타임 기준 내림차순)
         sorted_games = sorted(owned_games, key=lambda g: g.get("playtime_minutes", 0), reverse=True)
         top5 = [
             {
@@ -57,7 +32,6 @@ class GameRecommender:
             for g in sorted_games[:5]
         ]
 
-        # 장르 분포를 퍼센트로 변환 (차트용)
         total_genre_minutes = sum(genre_minutes.values()) or 1
         genre_distribution = {
             genre: {
@@ -74,27 +48,21 @@ class GameRecommender:
             "top5_games": top5,
         }
 
-    # ─────────────────────────────────────────
-    # 메인 추천 엔진
-    # ─────────────────────────────────────────
-    def get_recommendations(self, steam_id: str, owned_games: list[dict]) -> dict:
+    def get_recommendations(
+        self,
+        steam_id: str,
+        owned_games: list[dict],
+        real_users: dict[str, list[dict]] | None = None,
+    ) -> dict:
         """
-        추천 결과 페이지의 네 카테고리 데이터 반환
-
-        반환 구조:
-        {
-            "genre_based":  [ 게임카드, ... ],
-            "collab_based": [ 게임카드, ... ],
-            "hidden_gems":  [ 게임카드, ... ],
-            "graph_based":  [ 게임카드, ... ],  # LightGCN
-        }
+        real_users: {friend_steam_id: [{"app_id", "playtime_minutes", "name"}]}
+                    SteamService.get_friends_games() 반환값. 없으면 더미 유저 사용.
         """
         owned_ids = {g["app_id"] for g in owned_games}
-
         genre_recs  = self._genre_based(owned_games, owned_ids)
-        collab_recs = self._collab_based(steam_id, owned_ids)
+        collab_recs = self._collab_based(steam_id, owned_ids, real_users)
         hidden_recs = self._hidden_gems(owned_games, owned_ids)
-        graph_recs  = self._lightgcn(steam_id, owned_games, owned_ids)
+        graph_recs  = self._lightgcn(steam_id, owned_games, owned_ids, real_users)
 
         return {
             "genre_based":  genre_recs,
@@ -103,17 +71,8 @@ class GameRecommender:
             "graph_based":  graph_recs,
         }
 
-    # ─────────────────────────────────────────
-    # 알고리즘 1: 장르 기반 콘텐츠 필터링
-    # ─────────────────────────────────────────
+    # ── 알고리즘 1: 장르 기반 콘텐츠 필터링 ─────────────────────────────────
     def _genre_based(self, owned_games: list[dict], owned_ids: set) -> list[dict]:
-        """
-        로직:
-          1. 유저 플레이타임을 가중치로 장르 선호도 벡터 계산
-          2. 카탈로그의 미소유 게임과 장르 교집합 크기로 점수 산정
-          3. 점수 높은 순으로 최대 10개 반환
-        """
-        # 유저 장르 선호도 가중치 (플레이타임 비례)
         genre_weight: dict[str, float] = defaultdict(float)
         total_minutes = sum(g.get("playtime_minutes", 0) for g in owned_games) or 1
 
@@ -122,7 +81,6 @@ class GameRecommender:
             for genre in game.get("genres", []):
                 genre_weight[genre] += weight
 
-        # 미소유 게임 점수 계산
         top_genre = max(genre_weight, key=genre_weight.get) if genre_weight else ""
         candidates = []
         for app_id, info in GAME_CATALOG.items():
@@ -133,7 +91,6 @@ class GameRecommender:
             if score > 0:
                 match_pct = self._to_match_percent(score, max_score=1.5)
                 genre_str = " · ".join(matched[:2]) if matched else top_genre
-                reason = f"당신의 {genre_str} 플레이 패턴과 일치"
                 candidates.append({
                     "app_id": app_id,
                     "name": info["name"],
@@ -141,42 +98,51 @@ class GameRecommender:
                     "header_image": info["header_image"],
                     "store_url": info["store_url"],
                     "match_percent": match_pct,
-                    "reason": reason,
+                    "reason": f"당신의 {genre_str} 플레이 패턴과 일치",
                     "score": score,
                 })
 
         candidates.sort(key=lambda x: x["score"], reverse=True)
         return self._clean_cards(candidates[:10])
 
-    # ─────────────────────────────────────────
-    # 알고리즘 2: 아이템 기반 협업 필터링
-    # ─────────────────────────────────────────
-    def _collab_based(self, steam_id: str, owned_ids: set) -> list[dict]:
+    # ── 알고리즘 2: 유사 유저 기반 협업 필터링 ──────────────────────────────
+    def _collab_based(
+        self,
+        steam_id: str,
+        owned_ids: set,
+        real_users: dict[str, list[dict]] | None = None,
+    ) -> list[dict]:
         """
-        로직:
-          1. 현재 유저와 더미 유저 간 Jaccard 유사도(게임 중복) 계산
-          2. 겹치는 게임이 없으면 장르 벡터 코사인 유사도로 폴백
-          3. 가장 유사한 유저들이 보유한 미소유 게임을 유사도 가중치로 집계
+        real_users가 있으면 실제 스팀 친구 데이터 사용.
+        없거나 비어있으면 더미 유저로 폴백.
+        추천 후보는 GAME_CATALOG 범위 내에서 결정하고,
+        카탈로그에 없는 게임은 Steam Store API로 메타데이터 보완.
         """
-        # 현재 유저의 장르 프로필 (폴백용)
+        # ── 유저 풀 결정 ─────────────────────────────────────────────────────
+        using_real = bool(real_users)
+        user_pool: dict[str, list[dict]] = real_users if using_real else {}
+
+        # 더미 유저는 항상 보조로 포함 (실제 친구가 부족할 때 채우기)
+        for uid, games in DUMMY_OWNED_GAMES.items():
+            if uid != steam_id and uid not in user_pool:
+                user_pool[uid] = games
+
+        # ── 현재 유저 장르 프로필 (폴백 유사도용) ────────────────────────────
         user_genre_set: set[str] = set()
         for app_id in owned_ids:
             user_genre_set.update(GAME_CATALOG.get(app_id, {}).get("genres", []))
 
-        similarities = []
-        for other_id, other_games in DUMMY_OWNED_GAMES.items():
-            if other_id == steam_id:
-                continue
+        # ── Jaccard 유사도 계산 ───────────────────────────────────────────────
+        similarities: list[tuple[str, float, list[dict]]] = []
+        for other_id, other_games in user_pool.items():
             other_ids = {g["app_id"] for g in other_games}
             jaccard = self._jaccard_similarity(owned_ids, other_ids)
             if jaccard > 0:
                 similarities.append((other_id, jaccard, other_games))
 
-        # 겹치는 게임이 없으면 장르 유사도(Jaccard)로 폴백
+        # 겹치는 게임이 없으면 장르 유사도로 폴백
         if not similarities:
-            for other_id, other_games in DUMMY_OWNED_GAMES.items():
-                if other_id == steam_id:
-                    continue
+            for other_id, other_games in user_pool.items():
                 other_genre_set: set[str] = set()
                 for g in other_games:
                     other_genre_set.update(GAME_CATALOG.get(g["app_id"], {}).get("genres", []))
@@ -185,43 +151,45 @@ class GameRecommender:
                     similarities.append((other_id, genre_sim * 0.6, other_games))
 
         similarities.sort(key=lambda x: x[1], reverse=True)
+        top_sims = similarities[:10]  # 상위 10명 사용
 
-        # 추천 점수 집계 (유사도 가중치 합산)
+        # ── 추천 점수 집계 ────────────────────────────────────────────────────
         rec_scores: dict[int, float] = defaultdict(float)
-        for _, sim, other_games in similarities[:5]:
+        game_user_count: dict[int, int] = defaultdict(int)
+        for _, sim, other_games in top_sims:
             for game in other_games:
-                if game["app_id"] not in owned_ids:
-                    rec_scores[game["app_id"]] += sim
+                aid = game["app_id"]
+                if aid not in owned_ids:
+                    rec_scores[aid] += sim
+                    game_user_count[aid] += 1
 
-        # 유사 유저 수 집계 (reason용)
-        game_sim_users: dict[int, int] = defaultdict(int)
-        for _, _, other_games in similarities[:5]:
-            for game in other_games:
-                if game["app_id"] not in owned_ids:
-                    game_sim_users[game["app_id"]] += 1
-        fallback = not any(
+        is_fallback = not any(
             len({g["app_id"] for g in og} & owned_ids) > 0
-            for _, _, og in similarities
+            for _, _, og in top_sims
         )
 
-        # 점수 → 카드 변환
+        # ── 카드 변환: GAME_CATALOG 우선, 없으면 Steam API ───────────────────
         candidates = []
-        for app_id, score in rec_scores.items():
-            info = GAME_CATALOG.get(app_id)
+        for app_id, score in sorted(rec_scores.items(), key=lambda x: x[1], reverse=True)[:20]:
+            info = GAME_CATALOG.get(app_id) or self._fetch_game_info(app_id)
             if not info:
                 continue
-            match_pct = self._to_match_percent(score, max_score=2.0)
-            n_users = game_sim_users.get(app_id, 1)
-            if fallback:
-                reason = f"취향이 비슷한 유저 {n_users}명이 즐겨한 게임 (장르 유사도 기반)"
+            match_pct = self._to_match_percent(score, max_score=3.0)
+            n = game_user_count.get(app_id, 1)
+            if using_real and not is_fallback:
+                reason = f"스팀 친구 {n}명이 즐겨한 게임"
+            elif using_real:
+                reason = f"스팀 친구 {n}명 취향 기반 추천 (장르 유사도)"
+            elif is_fallback:
+                reason = f"취향이 비슷한 유저 {n}명이 즐겨한 게임 (장르 유사도 기반)"
             else:
-                reason = f"취향이 비슷한 유저 {n_users}명이 즐겨한 게임"
+                reason = f"취향이 비슷한 유저 {n}명이 즐겨한 게임"
             candidates.append({
                 "app_id": app_id,
                 "name": info["name"],
-                "genres": info["genres"],
-                "header_image": info["header_image"],
-                "store_url": info["store_url"],
+                "genres": info.get("genres", []),
+                "header_image": info.get("header_image", f"https://cdn.akamai.steamstatic.com/steam/apps/{app_id}/header.jpg"),
+                "store_url": info.get("store_url", f"https://store.steampowered.com/app/{app_id}"),
                 "match_percent": match_pct,
                 "reason": reason,
                 "score": score,
@@ -230,17 +198,8 @@ class GameRecommender:
         candidates.sort(key=lambda x: x["score"], reverse=True)
         return self._clean_cards(candidates[:10])
 
-    # ─────────────────────────────────────────
-    # 알고리즘 3: 숨겨진 명작 추천
-    # ─────────────────────────────────────────
+    # ── 알고리즘 3: 숨겨진 명작 ──────────────────────────────────────────────
     def _hidden_gems(self, owned_games: list[dict], owned_ids: set) -> list[dict]:
-        """
-        로직:
-          - 유저의 선호 장르와 겹치는 미소유 게임 중
-          - metacritic 점수가 높으면서 (87점 이상)
-          - 가격이 낮거나 무료인 게임을 우선 추천
-        """
-        # 유저 선호 장르 추출 (상위 3개)
         genre_count: dict[str, int] = defaultdict(int)
         for game in owned_games:
             for genre in game.get("genres", []):
@@ -256,11 +215,10 @@ class GameRecommender:
             metacritic = info.get("metacritic", 0)
             if genre_overlap == 0 or metacritic < 87:
                 continue
-            # 점수: 장르 겹침 * 메타크리틱 보정 + 가격 보너스
             price_bonus = 0.3 if info.get("price", 99999) == 0 else 0
             score = genre_overlap * (metacritic / 100) + price_bonus
             match_pct = self._to_match_percent(score, max_score=3.0)
-            common = sorted(top_genres & set(info.get("genres", [])))
+            common = sorted(top_genres & game_genres)
             genre_str = " · ".join(common[:2]) if common else ""
             price_str = "무료" if info.get("price", 0) == 0 else f"₩{info['price']:,}"
             reason = f"MC {metacritic}점 고평점 · {genre_str} · {price_str}"
@@ -280,30 +238,26 @@ class GameRecommender:
         candidates.sort(key=lambda x: x["score"], reverse=True)
         return self._clean_cards(candidates[:10])
 
-    # ─────────────────────────────────────────
-    # 알고리즘 4: LightGCN 그래프 기반 추천
-    # ─────────────────────────────────────────
-    def _lightgcn(self, steam_id: str, owned_games: list[dict], owned_ids: set) -> list[dict]:
-        """
-        로직:
-          1. 더미 유저 전체 플레이 데이터로 유저-게임 이분 그래프 구성
-          2. LightGCN으로 임베딩 학습 (BPR Loss)
-          3. 현재 유저가 학습 데이터에 없으면 플레이타임 가중 평균으로 임베딩 근사
-          4. 유저 임베딩과 게임 임베딩의 내적 점수로 미소유 게임 랭킹
-        """
-        # 학습 데이터: 더미 유저 전체 + 현재 유저
+    # ── 알고리즘 4: LightGCN ─────────────────────────────────────────────────
+    def _lightgcn(
+        self,
+        steam_id: str,
+        owned_games: list[dict],
+        owned_ids: set,
+        real_users: dict[str, list[dict]] | None = None,
+    ) -> list[dict]:
         interactions = []
-        for uid, games in DUMMY_OWNED_GAMES.items():
+        # 실제 친구 데이터가 있으면 학습에 포함
+        extra_users = real_users or {}
+        for uid, games in {**DUMMY_OWNED_GAMES, **extra_users}.items():
             for g in games:
                 interactions.append((uid, g["app_id"], g.get("playtime_minutes", 1)))
-        # 현재 유저 데이터도 포함 (학습에 반영)
         for g in owned_games:
             interactions.append((steam_id, g["app_id"], g.get("playtime_minutes", 1)))
 
         try:
             model = LightGCN(n_layers=3, emb_dim=64, lr=0.01, n_epochs=300)
             model.fit(interactions)
-
             if steam_id in model.user_index:
                 scored = model.recommend(steam_id, owned_ids, top_k=10)
             else:
@@ -311,7 +265,6 @@ class GameRecommender:
         except Exception:
             return []
 
-        # 점수 → 카드 변환
         if not scored:
             return []
         max_score = scored[0][1] if scored[0][1] > 0 else 1.0
@@ -320,49 +273,61 @@ class GameRecommender:
 
         candidates = []
         for app_id, score in scored:
-            info = GAME_CATALOG.get(app_id)
+            info = GAME_CATALOG.get(app_id) or self._fetch_game_info(app_id)
             if not info:
                 continue
-            # 점수를 60~99 범위 일치율로 변환
             match_pct = int(60 + ((score - min_score) / score_range) * 39)
             genre_str = " · ".join(info.get("genres", [])[:2])
-            reason = f"그래프 신경망(LightGCN)이 분석한 협업 추천 · {genre_str}"
+            n_users = len(extra_users) + len(DUMMY_OWNED_GAMES)
+            reason = f"GNN이 {n_users}명 플레이 그래프에서 분석 · {genre_str}"
             candidates.append({
                 "app_id": app_id,
                 "name": info["name"],
-                "genres": info["genres"],
-                "header_image": info["header_image"],
-                "store_url": info["store_url"],
+                "genres": info.get("genres", []),
+                "header_image": info.get("header_image", f"https://cdn.akamai.steamstatic.com/steam/apps/{app_id}/header.jpg"),
+                "store_url": info.get("store_url", f"https://store.steampowered.com/app/{app_id}"),
                 "match_percent": match_pct,
                 "metacritic": info.get("metacritic"),
                 "reason": reason,
             })
         return candidates
 
-    # ─────────────────────────────────────────
-    # 유틸리티
-    # ─────────────────────────────────────────
+    # ── 유틸리티 ─────────────────────────────────────────────────────────────
+    @staticmethod
+    def _fetch_game_info(app_id: int) -> dict | None:
+        """GAME_CATALOG에 없는 게임의 메타데이터를 Steam Store API에서 가져옴."""
+        try:
+            import requests as _req
+            url = f"https://store.steampowered.com/api/appdetails?appids={app_id}&filters=basic,genres"
+            res = _req.get(url, timeout=4)
+            data = res.json().get(str(app_id), {})
+            if data.get("success"):
+                d = data["data"]
+                return {
+                    "name": d.get("name", f"Game_{app_id}"),
+                    "genres": [g["description"] for g in d.get("genres", [])],
+                    "header_image": d.get("header_image") or f"https://cdn.akamai.steamstatic.com/steam/apps/{app_id}/header.jpg",
+                    "store_url": f"https://store.steampowered.com/app/{app_id}",
+                    "metacritic": 0,
+                    "price": 0,
+                }
+        except Exception:
+            pass
+        return None
+
     @staticmethod
     def _jaccard_similarity(set_a: set, set_b: set) -> float:
-        """두 게임 세트의 Jaccard 유사도 (교집합 / 합집합)"""
         if not set_a or not set_b:
             return 0.0
-        intersection = len(set_a & set_b)
-        union = len(set_a | set_b)
-        return intersection / union
+        return len(set_a & set_b) / len(set_a | set_b)
 
     @staticmethod
     def _to_match_percent(score: float, max_score: float = 1.0) -> int:
-        """
-        알고리즘 점수 → 프론트엔드 표시용 일치율(%) 변환
-        최소 60%, 최대 99%로 클램핑
-        """
         ratio = min(score / max_score, 1.0)
-        return int(60 + ratio * 39)  # 60 ~ 99 범위
+        return int(60 + ratio * 39)
 
     @staticmethod
     def _clean_cards(cards: list[dict]) -> list[dict]:
-        """내부 score 필드 제거 후 반환 (프론트에 불필요한 정보 숨김)"""
         for c in cards:
             c.pop("score", None)
         return cards
