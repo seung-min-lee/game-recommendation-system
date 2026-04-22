@@ -6,6 +6,7 @@
 #   3. 숨겨진 명작 추천         : 플레이타임은 적지만 장르가 맞는 고평점 게임 추천
 #   4. LightGCN                 : 유저-게임 그래프 컨볼루션 기반 딥러닝 추천
 
+from __future__ import annotations
 from collections import defaultdict
 from dummy_data import GAME_CATALOG, DUMMY_OWNED_GAMES
 from lightgcn import LightGCN

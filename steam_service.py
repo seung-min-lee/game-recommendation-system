@@ -1,3 +1,4 @@
+from __future__ import annotations
 import os
 import requests
 from dummy_data import GAME_CATALOG, DUMMY_OWNED_GAMES

@@ -10,6 +10,7 @@ LightGCN (Light Graph Convolutional Network) 추천 모델
   5. 유저·아이템 임베딩 내적 → 추천 점수
 """
 
+from __future__ import annotations
 import numpy as np
 from collections import defaultdict
 
