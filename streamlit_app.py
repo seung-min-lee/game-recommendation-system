@@ -20,70 +20,75 @@ st.set_page_config(
 steam = SteamService()
 recommender = GameRecommender()
 
-# ── CSS ──────────────────────────────────────────────────────────────────────
+# ── 전역 CSS ──────────────────────────────────────────────────────────────────
 st.markdown("""
 <style>
-    .main { background-color: #0e1117; }
-    .game-card {
-        background: #1a1d2e;
-        border-radius: 12px;
-        padding: 12px;
-        margin-bottom: 12px;
-        border: 1px solid #2d3250;
-        transition: transform 0.2s;
+    @import url('https://fonts.googleapis.com/css2?family=Noto+Sans+KR:wght@400;700;900&display=swap');
+
+    html, body, [data-testid="stAppViewContainer"], [data-testid="stApp"] {
+        background-color: #141414 !important;
+        color: #e5e5e5 !important;
+        font-family: 'Noto Sans KR', -apple-system, sans-serif !important;
     }
-    .game-card:hover { transform: translateY(-2px); border-color: #5865f2; }
-    .match-badge {
-        background: linear-gradient(135deg, #5865f2, #eb459e);
-        color: white;
-        border-radius: 20px;
-        padding: 3px 12px;
-        font-size: 13px;
-        font-weight: bold;
-    }
-    .meta-badge {
-        background: #ffd700;
-        color: #111;
-        border-radius: 6px;
-        padding: 2px 8px;
-        font-size: 12px;
-        font-weight: bold;
-    }
-    .stat-card {
-        background: #1a1d2e;
-        border-radius: 12px;
-        padding: 20px;
-        text-align: center;
-        border: 1px solid #2d3250;
-    }
-    .genre-tag {
-        background: #2d3250;
-        border-radius: 10px;
-        padding: 2px 10px;
-        margin: 2px;
-        font-size: 12px;
-        display: inline-block;
-    }
-    h1, h2, h3 { color: #ffffff !important; }
-    .stButton > button {
-        background: linear-gradient(135deg, #5865f2, #eb459e);
-        color: white;
-        border: none;
-        border-radius: 8px;
-        padding: 10px 30px;
-        font-size: 16px;
-        font-weight: bold;
-        width: 100%;
-    }
-    .stButton > button:hover { opacity: 0.9; }
+    [data-testid="stHeader"] { background: #141414 !important; }
+    [data-testid="stSidebar"] { background: #141414 !important; }
+    .block-container { padding-top: 2rem !important; max-width: 1200px !important; }
+
+    /* 입력창 */
     div[data-testid="stTextInput"] input {
-        background: #1a1d2e;
-        border: 1px solid #2d3250;
-        border-radius: 8px;
-        color: white;
-        font-size: 16px;
-        padding: 12px;
+        background-color: #333333 !important;
+        border: none !important;
+        border-radius: 4px !important;
+        color: #ffffff !important;
+        font-size: 1rem !important;
+        padding: 16px 20px !important;
     }
+    div[data-testid="stTextInput"] input:focus {
+        background-color: #454545 !important;
+        box-shadow: none !important;
+    }
+
+    /* 버튼 */
+    .stButton > button {
+        background-color: #E50914 !important;
+        color: white !important;
+        border: none !important;
+        border-radius: 4px !important;
+        font-size: 1rem !important;
+        font-weight: bold !important;
+        padding: 14px 30px !important;
+        width: 100% !important;
+        transition: background-color 0.2s !important;
+    }
+    .stButton > button:hover {
+        background-color: #c90812 !important;
+        border: none !important;
+    }
+
+    /* 탭 */
+    .stTabs [data-baseweb="tab-list"] {
+        background-color: #141414 !important;
+        border-bottom: 2px solid #2f2f2f !important;
+    }
+    .stTabs [data-baseweb="tab"] {
+        color: #b3b3b3 !important;
+        font-weight: bold !important;
+        background-color: transparent !important;
+    }
+    .stTabs [aria-selected="true"] {
+        color: #ffffff !important;
+        border-bottom: 3px solid #E50914 !important;
+    }
+    .stTabs [data-baseweb="tab-panel"] {
+        background-color: #141414 !important;
+        padding-top: 20px !important;
+    }
+
+    /* 구분선 */
+    hr { border-color: #2f2f2f !important; }
+
+    h1, h2, h3, h4 { color: #ffffff !important; }
+    p { color: #e5e5e5; }
 </style>
 """, unsafe_allow_html=True)
 
@@ -101,33 +106,27 @@ for key, default in [
 
 
 # ── 공통 유틸 ─────────────────────────────────────────────────────────────────
-def _get_recs(steam_id: str, owned_games: list) -> dict:
+def _get_recs(steam_id, owned_games):
     if _snowflake_ok:
         try:
             if snowflake_svc.has_recommendations(steam_id):
-                import json as _json
-
+                import json as _j
                 def _fmt(g):
                     genres = g.get("genres", [])
                     if isinstance(genres, str):
-                        try:
-                            genres = _json.loads(genres)
-                        except Exception:
-                            genres = [genres]
+                        try: genres = _j.loads(genres)
+                        except: genres = [genres]
                     return {
-                        "app_id": g.get("app_id"),
-                        "name": g.get("game_name"),
-                        "header_image": g.get("header_image"),
-                        "store_url": g.get("store_url"),
+                        "app_id": g.get("app_id"), "name": g.get("game_name"),
+                        "header_image": g.get("header_image"), "store_url": g.get("store_url"),
                         "genres": genres,
                         "match_percent": g.get("metacritic") or min(int(float(g.get("score") or 0)), 100),
                         "metacritic": g.get("metacritic"),
                     }
-
                 return {
-                    "genre_based": [_fmt(g) for g in snowflake_svc.get_cbf_recommendations(steam_id)],
+                    "genre_based":  [_fmt(g) for g in snowflake_svc.get_cbf_recommendations(steam_id)],
                     "collab_based": [_fmt(g) for g in snowflake_svc.get_cf_recommendations(steam_id)],
-                    "hidden_gems": [_fmt(g) for g in snowflake_svc.get_genre_trend(steam_id)],
+                    "hidden_gems":  [_fmt(g) for g in snowflake_svc.get_genre_trend(steam_id)],
                     "source": "snowflake",
                 }
         except Exception:
@@ -135,135 +134,121 @@ def _get_recs(steam_id: str, owned_games: list) -> dict:
     return {**recommender.get_recommendations(steam_id, owned_games), "source": "local"}
 
 
-def _game_card(game: dict):
-    name = game.get("name") or "Unknown"
-    img = game.get("header_image") or ""
-    genres = game.get("genres") or []
-    match_pct = game.get("match_percent", 0)
-    metacritic = game.get("metacritic")
-    store_url = game.get("store_url", "#")
-
-    genre_tags = " ".join(f'<span class="genre-tag">{g}</span>' for g in genres[:3])
-    meta_html = f'<span class="meta-badge">MC {metacritic}</span>' if metacritic else ""
-
-    html = f"""
-    <div class="game-card">
-        <div style="display:flex; gap:14px; align-items:flex-start;">
-            <img src="{img}" style="width:120px; height:56px; object-fit:cover; border-radius:6px; flex-shrink:0;" onerror="this.style.display='none'">
-            <div style="flex:1; min-width:0;">
-                <div style="display:flex; justify-content:space-between; align-items:center; flex-wrap:wrap; gap:6px;">
-                    <span style="font-weight:bold; font-size:15px; color:#fff;">{name}</span>
-                    <span class="match-badge">일치율 {match_pct}%</span>
+def _carousel_html(games: list) -> str:
+    if not games:
+        return '<p style="color:#b3b3b3;padding:20px 0;">추천 결과가 없습니다.</p>'
+    cards = ""
+    for g in games:
+        name        = (g.get("name") or "Unknown").replace("'", "&#39;")
+        img         = g.get("header_image") or "https://via.placeholder.com/280x150/181818/555?text=No+Image"
+        match_pct   = g.get("match_percent", 0)
+        store_url   = g.get("store_url", "#")
+        metacritic  = g.get("metacritic")
+        mc_html     = f'<span style="background:#E50914;color:#fff;border-radius:3px;padding:1px 6px;font-size:0.75rem;font-weight:bold;">MC {metacritic}</span>' if metacritic else ""
+        cards += f"""
+        <div onclick="window.open('{store_url}','_blank')" style="
+            background:#181818; border-radius:8px; overflow:hidden;
+            cursor:pointer; width:240px; flex:0 0 auto; scroll-snap-align:start;
+            transition:transform 0.3s,box-shadow 0.3s;
+            " onmouseover="this.style.transform='scale(1.08)';this.style.boxShadow='0 15px 30px rgba(0,0,0,0.7)';this.style.zIndex='10'"
+               onmouseout="this.style.transform='scale(1)';this.style.boxShadow='none';this.style.zIndex='1'">
+            <img src="{img}" style="width:100%;height:135px;object-fit:cover;"
+                 onerror="this.src='https://via.placeholder.com/240x135/181818/555?text=No+Image'">
+            <div style="padding:12px;">
+                <p style="color:#fff;font-size:0.95rem;font-weight:bold;margin-bottom:8px;
+                           white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">{name}</p>
+                <div style="display:flex;justify-content:space-between;align-items:center;">
+                    <span style="color:#46d369;font-weight:bold;font-size:0.9rem;">{match_pct}% 일치</span>
+                    {mc_html}
                 </div>
-                <div style="margin-top:6px;">{genre_tags} {meta_html}</div>
-                <a href="{store_url}" target="_blank" style="color:#5865f2; font-size:12px; text-decoration:none;">Steam에서 보기 →</a>
+                <p style="color:#E50914;font-size:0.8rem;margin-top:6px;font-weight:bold;">스토어 이동 ➔</p>
             </div>
-        </div>
-    </div>
-    """
-    st.markdown(html, unsafe_allow_html=True)
+        </div>"""
+    return f"""
+    <div style="display:flex;overflow-x:auto;scroll-snap-type:x mandatory;
+                gap:16px;padding:10px 0 20px;scrollbar-width:thin;
+                scrollbar-color:#333 #141414;">
+        {cards}
+    </div>"""
 
 
-# ── LightGCN 그래프 시각화 ────────────────────────────────────────────────────
-def _build_lightgcn_graph(steam_id: str, owned_games: list, rec_games: list) -> go.Figure:
+# ── LightGCN 그래프 ────────────────────────────────────────────────────────────
+def _build_lightgcn_graph(steam_id, owned_games, rec_games):
     from dummy_data import DUMMY_OWNED_GAMES, GAME_CATALOG
 
-    # 전체 인터랙션 수집 (더미 유저 + 현재 유저)
-    all_interactions: dict = {}
+    all_interactions = {}
     for uid, games in DUMMY_OWNED_GAMES.items():
         all_interactions[uid] = {g["app_id"]: g.get("playtime_minutes", 1) for g in games}
     all_interactions[steam_id] = {g["app_id"]: g.get("playtime_minutes", 1) for g in owned_games}
 
-    users   = list(all_interactions.keys())
-    game_ids = sorted({aid for games in all_interactions.values() for aid in games})
-
+    users    = list(all_interactions.keys())
+    game_ids = sorted({aid for gs in all_interactions.values() for aid in gs})
     owned_ids = {g["app_id"] for g in owned_games}
     rec_ids   = {g["app_id"] for g in rec_games}
 
-    n_u = len(users)
-    n_g = len(game_ids)
+    n_u, n_g = len(users), len(game_ids)
+    user_pos = {u: (0.0, i / max(n_u - 1, 1)) for i, u in enumerate(users)}
+    game_pos = {g: (1.0, i / max(n_g - 1, 1)) for i, g in enumerate(game_ids)}
 
-    # 이분 그래프 레이아웃: 유저 왼쪽(x=0), 게임 오른쪽(x=1)
-    user_pos  = {u: (0.0, i / max(n_u - 1, 1)) for i, u in enumerate(users)}
-    game_pos  = {g: (1.0, i / max(n_g - 1, 1)) for i, g in enumerate(game_ids)}
-
-    import math
     fig = go.Figure()
 
-    # ── 엣지 ──────────────────────────────────────────────────────────────────
-    # 추천 엣지(초록)와 일반 엣지(회색) 분리
     for uid, games in all_interactions.items():
         ux, uy = user_pos[uid]
-        for aid, playtime in games.items():
+        for aid in games:
             gx, gy = game_pos[aid]
-            is_current = uid == steam_id
-            is_rec     = aid in rec_ids
-            color  = "rgba(87,242,135,0.6)"  if (is_current and is_rec)  else \
-                     "rgba(254,215,92,0.5)"  if is_current                else \
-                     "rgba(88,101,242,0.2)"
-            width  = 2.5 if is_current else 0.8
+            is_me  = uid == steam_id
+            is_rec = aid in rec_ids
+            color  = "rgba(229,9,20,0.7)"   if (is_me and is_rec)  else \
+                     "rgba(229,9,20,0.3)"   if is_me               else \
+                     "rgba(255,255,255,0.08)"
+            width  = 2.5 if is_me else 0.6
             fig.add_trace(go.Scatter(
                 x=[ux, gx, None], y=[uy, gy, None],
-                mode="lines",
-                line=dict(width=width, color=color),
-                hoverinfo="none",
-                showlegend=False,
+                mode="lines", line=dict(width=width, color=color),
+                hoverinfo="none", showlegend=False,
             ))
 
-    # ── 유저 노드 ─────────────────────────────────────────────────────────────
     for uid in users:
         ux, uy = user_pos[uid]
-        is_me   = uid == steam_id
-        label   = "👤 나 (현재 유저)" if is_me else f"User_{uid[-4:]}"
-        color   = "#eb459e" if is_me else "#5865f2"
-        size    = 22 if is_me else 14
+        is_me  = uid == steam_id
+        label  = "👤 나" if is_me else f"User_{uid[-4:]}"
         fig.add_trace(go.Scatter(
-            x=[ux], y=[uy],
-            mode="markers+text",
-            marker=dict(size=size, color=color, line=dict(width=2, color="white")),
-            text=[label],
-            textposition="middle left",
+            x=[ux], y=[uy], mode="markers+text",
+            marker=dict(size=22 if is_me else 14,
+                        color="#E50914" if is_me else "#555555",
+                        line=dict(width=2, color="white")),
+            text=[label], textposition="middle left",
             textfont=dict(size=12 if is_me else 10, color="white"),
             hovertemplate=f"<b>{label}</b><br>게임 수: {len(all_interactions[uid])}<extra></extra>",
             showlegend=False,
         ))
 
-    # ── 게임 노드 ─────────────────────────────────────────────────────────────
     for aid in game_ids:
         gx, gy = game_pos[aid]
-        info   = GAME_CATALOG.get(aid, {})
-        name   = info.get("name", f"Game_{aid}")
-        genres = ", ".join(info.get("genres", [])[:2])
-
+        name   = GAME_CATALOG.get(aid, {}).get("name", f"Game_{aid}")
+        genres = ", ".join(GAME_CATALOG.get(aid, {}).get("genres", [])[:2])
         if aid in rec_ids:
-            color, symbol, size = "#57f287", "star", 16
-            label = f"⭐ {name[:16]}"
+            color, symbol, size, label = "#E50914", "star", 16, f"⭐ {name[:15]}"
         elif aid in owned_ids:
-            color, symbol, size = "#fee75c", "square", 13
-            label = f"🎮 {name[:16]}"
+            color, symbol, size, label = "#ffffff", "square", 13, f"🎮 {name[:15]}"
         else:
-            color, symbol, size = "#6b7280", "circle", 10
-            label = name[:16]
-
+            color, symbol, size, label = "#444444", "circle", 9, name[:15]
         fig.add_trace(go.Scatter(
-            x=[gx], y=[gy],
-            mode="markers+text",
+            x=[gx], y=[gy], mode="markers+text",
             marker=dict(size=size, color=color, symbol=symbol,
-                        line=dict(width=1, color="white")),
-            text=[label],
-            textposition="middle right",
-            textfont=dict(size=9, color="white"),
-            hovertemplate=f"<b>{name}</b><br>장르: {genres}<extra></extra>",
+                        line=dict(width=1, color="#333")),
+            text=[label], textposition="middle right",
+            textfont=dict(size=9, color="#b3b3b3"),
+            hovertemplate=f"<b>{name}</b><br>{genres}<extra></extra>",
             showlegend=False,
         ))
 
-    # ── 범례 (더미 trace) ─────────────────────────────────────────────────────
     for label, color, symbol in [
-        ("현재 유저",    "#eb459e", "circle"),
-        ("다른 유저",    "#5865f2", "circle"),
-        ("추천 게임 ⭐", "#57f287", "star"),
-        ("보유 게임",    "#fee75c", "square"),
-        ("기타 게임",    "#6b7280", "circle"),
+        ("현재 유저",    "#E50914", "circle"),
+        ("다른 유저",    "#555555", "circle"),
+        ("추천 게임 ⭐", "#E50914", "star"),
+        ("보유 게임",    "#ffffff", "square"),
+        ("기타 게임",    "#444444", "circle"),
     ]:
         fig.add_trace(go.Scatter(
             x=[None], y=[None], mode="markers",
@@ -272,27 +257,18 @@ def _build_lightgcn_graph(steam_id: str, owned_games: list, rec_games: list) -> 
         ))
 
     fig.update_layout(
-        paper_bgcolor="rgba(0,0,0,0)",
-        plot_bgcolor="rgba(14,17,23,1)",
-        font_color="white",
-        height=520,
-        margin=dict(l=160, r=200, t=10, b=10),
-        xaxis=dict(showgrid=False, zeroline=False, showticklabels=False,
-                   range=[-0.3, 1.3]),
+        paper_bgcolor="#141414", plot_bgcolor="#181818",
+        font_color="#e5e5e5", height=500,
+        margin=dict(l=160, r=200, t=20, b=20),
+        xaxis=dict(showgrid=False, zeroline=False, showticklabels=False, range=[-0.35, 1.35]),
         yaxis=dict(showgrid=False, zeroline=False, showticklabels=False),
-        legend=dict(
-            bgcolor="rgba(26,29,46,0.9)",
-            bordercolor="#2d3250",
-            borderwidth=1,
-            font=dict(color="white", size=11),
-        ),
+        legend=dict(bgcolor="#181818", bordercolor="#2f2f2f", borderwidth=1,
+                    font=dict(color="white", size=11)),
         annotations=[
-            dict(x=0.0, y=1.05, xref="paper", yref="paper",
-                 text="<b>유저</b>", showarrow=False,
-                 font=dict(size=13, color="#8b8fa8")),
-            dict(x=1.0, y=1.05, xref="paper", yref="paper",
-                 text="<b>게임</b>", showarrow=False,
-                 font=dict(size=13, color="#8b8fa8")),
+            dict(x=0.0, y=1.04, xref="paper", yref="paper",
+                 text="<b>유저</b>", showarrow=False, font=dict(size=13, color="#b3b3b3")),
+            dict(x=1.0, y=1.04, xref="paper", yref="paper",
+                 text="<b>게임</b>", showarrow=False, font=dict(size=13, color="#b3b3b3")),
         ],
     )
     return fig
@@ -300,238 +276,201 @@ def _build_lightgcn_graph(steam_id: str, owned_games: list, rec_games: list) -> 
 
 # ── 페이지: 로그인 ────────────────────────────────────────────────────────────
 def page_login():
-    st.markdown("<br>" * 2, unsafe_allow_html=True)
-    col = st.columns([1, 2, 1])[1]
-
+    _, col, _ = st.columns([1, 1.4, 1])
     with col:
         st.markdown("""
-        <div style="text-align:center; padding: 40px 0 20px;">
-            <span style="font-size:64px;">🎮</span>
-            <h1 style="font-size:42px; margin:10px 0 4px;">Game Finder</h1>
-            <p style="color:#8b8fa8; font-size:16px;">Steam 플레이 기록 기반 AI 게임 추천</p>
+        <div style="background:rgba(0,0,0,0.75);border-radius:8px;padding:50px 40px;margin-top:60px;text-align:center;">
+            <h1 style="color:#E50914;font-size:3rem;font-weight:900;letter-spacing:2px;
+                       text-transform:uppercase;margin-bottom:10px;">Game Finder</h1>
+            <p style="color:#b3b3b3;font-size:1rem;margin-bottom:40px;line-height:1.6;">
+                당신의 플레이 기록을 분석하여<br>최고의 게임을 추천합니다.
+            </p>
         </div>
         """, unsafe_allow_html=True)
 
-        steam_id = st.text_input(
-            "Steam ID",
-            placeholder="Steam ID를 입력하세요 (예: 76561198000000001)",
-            label_visibility="collapsed",
-        )
+        steam_id = st.text_input("", placeholder="스팀 ID 입력 (예: 76561198000000001)",
+                                  label_visibility="collapsed")
+
+        st.markdown("<div style='height:10px'></div>", unsafe_allow_html=True)
+        login_clicked = st.button("시작하기", key="login_btn")
+
+        st.markdown("""
+        <div style="display:flex;align-items:center;color:#737373;font-size:0.9rem;margin:20px 0;">
+            <div style="flex:1;border-bottom:1px solid #333;"></div>
+            <span style="padding:0 15px;">또는 데모 계정</span>
+            <div style="flex:1;border-bottom:1px solid #333;"></div>
+        </div>
+        """, unsafe_allow_html=True)
 
         demo_ids = ["76561198000000001", "76561198000000002", "76561198000000003"]
-        st.markdown("<p style='color:#8b8fa8; font-size:13px; text-align:center;'>데모 계정</p>", unsafe_allow_html=True)
         dcols = st.columns(3)
         for i, did in enumerate(demo_ids):
             if dcols[i].button(f"Demo {i+1}", key=f"demo_{i}"):
                 steam_id = did
+                login_clicked = True
 
-        st.markdown("<br>", unsafe_allow_html=True)
-        if st.button("시작하기", key="login_btn"):
-            if not steam_id.strip():
-                st.error("Steam ID를 입력해주세요.")
+        if login_clicked:
+            if not steam_id or not steam_id.strip():
+                st.error("스팀 ID를 입력해주세요.")
                 return
-            with st.spinner("데이터 불러오는 중..."):
-                user = steam.get_user_summary(steam_id.strip())
-                owned = steam.get_owned_games(steam_id.strip())
+            with st.spinner("분석 중..."):
+                user   = steam.get_user_summary(steam_id.strip())
+                owned  = steam.get_owned_games(steam_id.strip())
                 if not owned:
                     st.error("게임 데이터를 찾을 수 없습니다.")
                     return
-                stats = recommender.compute_stats(owned)
-                recs = _get_recs(steam_id.strip(), owned)
+                stats  = recommender.compute_stats(owned)
+                recs   = _get_recs(steam_id.strip(), owned)
                 st.session_state.update(
-                    steam_id=steam_id.strip(),
-                    user=user,
-                    stats=stats,
-                    recs=recs,
-                    owned_games=owned,
-                    page="dashboard",
+                    steam_id=steam_id.strip(), user=user,
+                    stats=stats, recs=recs, owned_games=owned, page="dashboard",
                 )
                 st.rerun()
+
+    st.markdown("""
+    <div style="text-align:center;color:#737373;font-size:0.8rem;margin-top:40px;">
+        Powered by Steam API &nbsp;·&nbsp; Not affiliated with Valve Corporation.
+    </div>
+    """, unsafe_allow_html=True)
 
 
 # ── 페이지: 대시보드 ──────────────────────────────────────────────────────────
 def page_dashboard():
-    user = st.session_state.user or {}
+    user  = st.session_state.user or {}
     stats = st.session_state.stats or {}
 
-    # 상단 헤더
-    hcol1, hcol2 = st.columns([6, 1])
-    with hcol1:
-        avatar = user.get("avatar_url", "")
-        username = user.get("username", "Unknown")
-        if avatar:
-            st.markdown(
-                f'<div style="display:flex;align-items:center;gap:16px;">'
-                f'<img src="{avatar}" style="width:60px;height:60px;border-radius:50%;">'
-                f'<div><h2 style="margin:0;">{username}</h2>'
-                f'<p style="color:#8b8fa8;margin:0;">{st.session_state.steam_id}</p></div></div>',
-                unsafe_allow_html=True,
-            )
-        else:
-            st.markdown(f"## {username}")
-    with hcol2:
-        if st.button("로그아웃"):
-            for k in ["steam_id", "user", "stats", "recs"]:
+    avatar   = user.get("avatar_url", "")
+    username = user.get("username", "Unknown")
+    total_h  = stats.get("total_playtime_hours", 0)
+    total_g  = stats.get("total_games", 0)
+
+    # 프로필 헤더
+    avatar_html = f'<img src="{avatar}" style="width:80px;height:80px;border-radius:4px;border:2px solid #E50914;margin-right:20px;">' if avatar else ""
+    st.markdown(f"""
+    <div style="display:flex;align-items:center;background:#181818;padding:25px 30px;
+                border-radius:8px;margin-bottom:30px;">
+        {avatar_html}
+        <div>
+            <h2 style="color:#fff;font-size:1.8rem;margin-bottom:5px;">{username} 님의 플레이 기록</h2>
+            <p style="color:#b3b3b3;font-size:1rem;">
+                총 플레이타임: {total_h:,} 시간 &nbsp;·&nbsp; 보유 게임: {total_g}개
+            </p>
+        </div>
+        <div style="margin-left:auto;">
+    """, unsafe_allow_html=True)
+
+    logout_col = st.columns([8, 1])[1]
+    with logout_col:
+        if st.button("로그아웃", key="logout_btn"):
+            for k in ["steam_id", "user", "stats", "recs", "owned_games"]:
                 st.session_state[k] = None
             st.session_state.page = "login"
             st.rerun()
 
-    st.markdown("---")
-
-    # 통계 카드
-    total_hours = stats.get("total_playtime_hours", 0)
-    total_games = stats.get("total_games", 0)
-    genre_dist = stats.get("genre_distribution", {})
-    top_genre = max(genre_dist, key=lambda g: genre_dist[g]["minutes"]) if genre_dist else "-"
-
-    c1, c2, c3 = st.columns(3)
-    c1.markdown(f'<div class="stat-card"><h1 style="color:#5865f2;">{total_hours:,}</h1><p style="color:#8b8fa8;">총 플레이타임 (시간)</p></div>', unsafe_allow_html=True)
-    c2.markdown(f'<div class="stat-card"><h1 style="color:#eb459e;">{total_games}</h1><p style="color:#8b8fa8;">보유 게임 수</p></div>', unsafe_allow_html=True)
-    c3.markdown(f'<div class="stat-card"><h1 style="color:#57f287; font-size:28px;">{top_genre}</h1><p style="color:#8b8fa8;">최다 플레이 장르</p></div>', unsafe_allow_html=True)
-
-    st.markdown("<br>", unsafe_allow_html=True)
-
     # 차트
-    ch1, ch2 = st.columns(2)
+    genre_dist = stats.get("genre_distribution", {})
+    top5       = stats.get("top5_games", [])
 
+    ch1, ch2 = st.columns(2)
     with ch1:
-        st.markdown("#### 장르별 플레이타임")
+        st.markdown('<div style="background:#181818;padding:25px;border-radius:8px;">', unsafe_allow_html=True)
+        st.markdown('<h3 style="text-align:center;margin-bottom:20px;">선호하는 장르</h3>', unsafe_allow_html=True)
         if genre_dist:
-            df_genre = pd.DataFrame([
-                {"장르": g, "시간": round(v["minutes"] / 60, 1)}
-                for g, v in list(genre_dist.items())[:8]
-            ])
-            fig = px.pie(
-                df_genre, names="장르", values="시간",
-                color_discrete_sequence=px.colors.sequential.Plasma_r,
-                hole=0.4,
-            )
+            df = pd.DataFrame([{"장르": g, "시간": round(v["minutes"]/60, 1)}
+                                for g, v in list(genre_dist.items())[:6]])
+            colors = ["#E50914", "#B20710", "#831010", "#5A0A0A", "#4A4A4A", "#2B2B2B"]
+            fig = go.Figure(go.Pie(
+                labels=df["장르"], values=df["시간"],
+                hole=0.45,
+                marker=dict(colors=colors[:len(df)], line=dict(color="#141414", width=2)),
+            ))
             fig.update_layout(
-                paper_bgcolor="rgba(0,0,0,0)", plot_bgcolor="rgba(0,0,0,0)",
-                font_color="white", margin=dict(t=20, b=20),
-                legend=dict(font=dict(color="white")),
+                paper_bgcolor="#181818", plot_bgcolor="#181818",
+                font_color="#b3b3b3", margin=dict(t=10, b=10),
+                legend=dict(font=dict(color="#b3b3b3")),
+                showlegend=True,
             )
             st.plotly_chart(fig, use_container_width=True)
+        st.markdown('</div>', unsafe_allow_html=True)
 
     with ch2:
-        st.markdown("#### Top 5 게임")
-        top5 = stats.get("top5_games", [])
+        st.markdown('<div style="background:#181818;padding:25px;border-radius:8px;">', unsafe_allow_html=True)
+        st.markdown('<h3 style="text-align:center;margin-bottom:20px;">가장 많이 플레이한 게임</h3>', unsafe_allow_html=True)
         if top5:
-            df_top5 = pd.DataFrame([
-                {"게임": g["name"][:20], "시간": g["playtime_hours"]}
-                for g in top5
-            ])
-            fig2 = px.bar(
-                df_top5, x="시간", y="게임", orientation="h",
-                color="시간", color_continuous_scale="Plasma",
-            )
+            df2 = pd.DataFrame([{"게임": g["name"][:22], "시간": g["playtime_hours"]} for g in top5])
+            fig2 = go.Figure(go.Bar(
+                x=df2["시간"], y=df2["게임"], orientation="h",
+                marker=dict(color="#E50914", cornerradius=4),
+            ))
             fig2.update_layout(
-                paper_bgcolor="rgba(0,0,0,0)", plot_bgcolor="rgba(0,0,0,0)",
-                font_color="white", margin=dict(t=20, b=20),
-                coloraxis_showscale=False, yaxis=dict(autorange="reversed"),
+                paper_bgcolor="#181818", plot_bgcolor="#181818",
+                font_color="#b3b3b3", margin=dict(t=10, b=10, l=10),
+                xaxis=dict(gridcolor="rgba(255,255,255,0.05)"),
+                yaxis=dict(gridcolor="rgba(0,0,0,0)", autorange="reversed"),
             )
             st.plotly_chart(fig2, use_container_width=True)
+        st.markdown('</div>', unsafe_allow_html=True)
 
     st.markdown("<br>", unsafe_allow_html=True)
-    if st.button("🎮 내 추천 게임 보기", key="go_recs"):
-        st.session_state.page = "recommendations"
-        st.rerun()
+    _, btn_col, _ = st.columns([2, 3, 2])
+    with btn_col:
+        if st.button("맞춤 추천작 보기 ➔", key="go_recs"):
+            st.session_state.page = "recommendations"
+            st.rerun()
 
 
 # ── 페이지: 추천 ──────────────────────────────────────────────────────────────
 def page_recommendations():
-    recs = st.session_state.recs or {}
-    user = st.session_state.user or {}
-    username = user.get("username", "Unknown")
+    recs     = st.session_state.recs or {}
+    username = (st.session_state.user or {}).get("username", "Unknown")
 
-    hcol1, hcol2 = st.columns([6, 1])
-    with hcol1:
-        st.markdown(f"## 🎮 {username}님을 위한 추천")
-        source = recs.get("source", "local")
-        badge_color = "#57f287" if source == "snowflake" else "#fee75c"
-        st.markdown(
-            f'<span style="background:{badge_color};color:#111;border-radius:6px;padding:2px 10px;font-size:12px;font-weight:bold;">'
-            f'{"Snowflake" if source == "snowflake" else "로컬"} 데이터</span>',
-            unsafe_allow_html=True,
-        )
-    with hcol2:
-        if st.button("← 대시보드"):
+    # 헤더
+    hc1, hc2 = st.columns([7, 1])
+    with hc1:
+        st.markdown(f"""
+        <div style="border-bottom:2px solid #2f2f2f;padding-bottom:20px;margin-bottom:40px;">
+            <h1 style="font-size:2.2rem;font-weight:800;">AI 맞춤 추천 게임</h1>
+            <p style="color:#b3b3b3;">{username}님을 위한 게임 추천</p>
+        </div>
+        """, unsafe_allow_html=True)
+    with hc2:
+        st.markdown("<br>", unsafe_allow_html=True)
+        if st.button("← 통계", key="back_btn"):
             st.session_state.page = "dashboard"
             st.rerun()
 
-    st.markdown("---")
-
-    tab1, tab2, tab3, tab4 = st.tabs(["🎯 장르 기반 추천", "👥 협업 필터링", "💎 Hidden Gems", "🕸️ LightGCN (Graph)"])
+    tab1, tab2, tab3, tab4 = st.tabs(["🎮 장르 기반 추천", "👥 유사 유저 기반 추천", "💎 숨겨진 명작", "🕸️ LightGCN"])
 
     with tab1:
-        st.markdown("**플레이타임이 많은 장르와 유사한 게임**")
-        games = recs.get("genre_based", [])
-        if games:
-            cols = st.columns(2)
-            for i, g in enumerate(games):
-                with cols[i % 2]:
-                    _game_card(g)
-        else:
-            st.info("추천 결과가 없습니다.")
+        st.markdown('<h2 style="font-size:1.5rem;padding-left:10px;border-left:4px solid #E50914;">🎮 장르 기반 추천</h2>', unsafe_allow_html=True)
+        st.markdown(_carousel_html(recs.get("genre_based", [])), unsafe_allow_html=True)
 
     with tab2:
-        st.markdown("**비슷한 취향의 유저들이 즐긴 게임**")
-        games = recs.get("collab_based", [])
-        if games:
-            cols = st.columns(2)
-            for i, g in enumerate(games):
-                with cols[i % 2]:
-                    _game_card(g)
-        else:
-            st.info("추천 결과가 없습니다.")
+        st.markdown('<h2 style="font-size:1.5rem;padding-left:10px;border-left:4px solid #E50914;">👥 유사 유저 기반 추천</h2>', unsafe_allow_html=True)
+        st.markdown(_carousel_html(recs.get("collab_based", [])), unsafe_allow_html=True)
 
     with tab3:
-        st.markdown("**숨겨진 명작 — Metacritic 87점+ 고평점 미소유 게임**")
-        games = recs.get("hidden_gems", [])
-        if games:
-            cols = st.columns(2)
-            for i, g in enumerate(games):
-                with cols[i % 2]:
-                    _game_card(g)
-        else:
-            st.info("추천 결과가 없습니다.")
+        st.markdown('<h2 style="font-size:1.5rem;padding-left:10px;border-left:4px solid #E50914;">💎 숨겨진 명작</h2>', unsafe_allow_html=True)
+        st.markdown(_carousel_html(recs.get("hidden_gems", [])), unsafe_allow_html=True)
 
     with tab4:
-        st.markdown("**LightGCN — 유저-게임 그래프 컨볼루션 딥러닝 추천**")
+        st.markdown('<h2 style="font-size:1.5rem;padding-left:10px;border-left:4px solid #E50914;">🕸️ LightGCN 그래프 추천</h2>', unsafe_allow_html=True)
         st.markdown(
-            '<span style="background:#5865f2;color:white;border-radius:6px;padding:2px 10px;font-size:12px;">'
-            'Graph Neural Network · SIGIR 2020</span>',
+            '<p style="color:#b3b3b3;font-size:0.9rem;margin-bottom:16px;">'
+            'Graph Neural Network (SIGIR 2020) · '
+            '<span style="color:#E50914;">빨간 별</span> = 추천 게임 &nbsp;|&nbsp; '
+            '<span style="color:#fff;">흰 사각형</span> = 보유 게임</p>',
             unsafe_allow_html=True,
         )
-        st.markdown("<br>", unsafe_allow_html=True)
-
-        games = recs.get("graph_based", [])
-
-        # 유저-게임 이분 그래프 시각화
-        st.markdown("#### 유저-게임 상호작용 그래프")
-        st.markdown(
-            '<p style="color:#8b8fa8;font-size:13px;">'
-            '⭐ 초록 별 = LightGCN 추천 게임 &nbsp;|&nbsp; '
-            '🟡 노랑 = 현재 보유 게임 &nbsp;|&nbsp; '
-            '엣지 굵기 = 플레이타임 강도</p>',
-            unsafe_allow_html=True,
-        )
+        graph_games = recs.get("graph_based", [])
         fig_graph = _build_lightgcn_graph(
             st.session_state.steam_id,
-            st.session_state.owned_games,
-            games,
+            st.session_state.owned_games or [],
+            graph_games,
         )
         st.plotly_chart(fig_graph, use_container_width=True)
-
         st.markdown("---")
-        st.markdown("#### 추천 결과")
-        if games:
-            cols = st.columns(2)
-            for i, g in enumerate(games):
-                with cols[i % 2]:
-                    _game_card(g)
-        else:
-            st.info("추천 결과가 없습니다. (LightGCN 학습 중이거나 데이터 부족)")
+        st.markdown(_carousel_html(graph_games), unsafe_allow_html=True)
 
 
 # ── 라우터 ────────────────────────────────────────────────────────────────────
