@@ -32,6 +32,7 @@ jobs:
           username: ubuntu
           key: ${{ secrets.EC2_SSH_KEY }}
           script: |
+            docker system prune -af --volumes || true
             docker pull ${{ secrets.DOCKERHUB_USERNAME }}/gamefinder-api:latest
             docker stop gamefinder-api || true
             docker rm gamefinder-api || true
