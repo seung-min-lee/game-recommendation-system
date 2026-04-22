@@ -4,9 +4,11 @@
 #   1. 장르 기반 콘텐츠 필터링  : 유저가 많이 플레이한 장르와 겹치는 미소유 게임 추천
 #   2. 아이템 기반 협업 필터링  : 유사 유저의 플레이 패턴을 분석해 추천
 #   3. 숨겨진 명작 추천         : 플레이타임은 적지만 장르가 맞는 고평점 게임 추천
+#   4. LightGCN                 : 유저-게임 그래프 컨볼루션 기반 딥러닝 추천
 
 from collections import defaultdict
 from dummy_data import GAME_CATALOG, DUMMY_OWNED_GAMES
+from lightgcn import LightGCN
 
 
 class GameRecommender:
@@ -76,13 +78,14 @@ class GameRecommender:
     # ─────────────────────────────────────────
     def get_recommendations(self, steam_id: str, owned_games: list[dict]) -> dict:
         """
-        추천 결과 페이지의 세 카테고리 데이터 반환
+        추천 결과 페이지의 네 카테고리 데이터 반환
 
         반환 구조:
         {
             "genre_based":  [ 게임카드, ... ],
             "collab_based": [ 게임카드, ... ],
             "hidden_gems":  [ 게임카드, ... ],
+            "graph_based":  [ 게임카드, ... ],  # LightGCN
         }
         """
         owned_ids = {g["app_id"] for g in owned_games}
@@ -90,11 +93,13 @@ class GameRecommender:
         genre_recs  = self._genre_based(owned_games, owned_ids)
         collab_recs = self._collab_based(steam_id, owned_ids)
         hidden_recs = self._hidden_gems(owned_games, owned_ids)
+        graph_recs  = self._lightgcn(steam_id, owned_games, owned_ids)
 
         return {
             "genre_based":  genre_recs,
             "collab_based": collab_recs,
             "hidden_gems":  hidden_recs,
+            "graph_based":  graph_recs,
         }
 
     # ─────────────────────────────────────────
@@ -232,6 +237,62 @@ class GameRecommender:
 
         candidates.sort(key=lambda x: x["score"], reverse=True)
         return self._clean_cards(candidates[:10])
+
+    # ─────────────────────────────────────────
+    # 알고리즘 4: LightGCN 그래프 기반 추천
+    # ─────────────────────────────────────────
+    def _lightgcn(self, steam_id: str, owned_games: list[dict], owned_ids: set) -> list[dict]:
+        """
+        로직:
+          1. 더미 유저 전체 플레이 데이터로 유저-게임 이분 그래프 구성
+          2. LightGCN으로 임베딩 학습 (BPR Loss)
+          3. 현재 유저가 학습 데이터에 없으면 플레이타임 가중 평균으로 임베딩 근사
+          4. 유저 임베딩과 게임 임베딩의 내적 점수로 미소유 게임 랭킹
+        """
+        # 학습 데이터: 더미 유저 전체 + 현재 유저
+        interactions = []
+        for uid, games in DUMMY_OWNED_GAMES.items():
+            for g in games:
+                interactions.append((uid, g["app_id"], g.get("playtime_minutes", 1)))
+        # 현재 유저 데이터도 포함 (학습에 반영)
+        for g in owned_games:
+            interactions.append((steam_id, g["app_id"], g.get("playtime_minutes", 1)))
+
+        try:
+            model = LightGCN(n_layers=3, emb_dim=64, lr=0.01, n_epochs=300)
+            model.fit(interactions)
+
+            if steam_id in model.user_index:
+                scored = model.recommend(steam_id, owned_ids, top_k=10)
+            else:
+                scored = model.recommend_new_user(owned_games, owned_ids, top_k=10)
+        except Exception:
+            return []
+
+        # 점수 → 카드 변환
+        if not scored:
+            return []
+        max_score = scored[0][1] if scored[0][1] > 0 else 1.0
+        min_score = scored[-1][1]
+        score_range = max_score - min_score or 1.0
+
+        candidates = []
+        for app_id, score in scored:
+            info = GAME_CATALOG.get(app_id)
+            if not info:
+                continue
+            # 점수를 60~99 범위 일치율로 변환
+            match_pct = int(60 + ((score - min_score) / score_range) * 39)
+            candidates.append({
+                "app_id": app_id,
+                "name": info["name"],
+                "genres": info["genres"],
+                "header_image": info["header_image"],
+                "store_url": info["store_url"],
+                "match_percent": match_pct,
+                "metacritic": info.get("metacritic"),
+            })
+        return candidates
 
     # ─────────────────────────────────────────
     # 유틸리티

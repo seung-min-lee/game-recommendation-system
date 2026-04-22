@@ -325,7 +325,7 @@ def page_recommendations():
 
     st.markdown("---")
 
-    tab1, tab2, tab3 = st.tabs(["🎯 장르 기반 추천", "👥 협업 필터링", "💎 Hidden Gems"])
+    tab1, tab2, tab3, tab4 = st.tabs(["🎯 장르 기반 추천", "👥 협업 필터링", "💎 Hidden Gems", "🕸️ LightGCN (Graph)"])
 
     with tab1:
         st.markdown("**플레이타임이 많은 장르와 유사한 게임**")
@@ -359,6 +359,23 @@ def page_recommendations():
                     _game_card(g)
         else:
             st.info("추천 결과가 없습니다.")
+
+    with tab4:
+        st.markdown("**LightGCN — 유저-게임 그래프 컨볼루션 딥러닝 추천**")
+        st.markdown(
+            '<span style="background:#5865f2;color:white;border-radius:6px;padding:2px 10px;font-size:12px;">'
+            'Graph Neural Network · SIGIR 2020</span>',
+            unsafe_allow_html=True,
+        )
+        st.markdown("<br>", unsafe_allow_html=True)
+        games = recs.get("graph_based", [])
+        if games:
+            cols = st.columns(2)
+            for i, g in enumerate(games):
+                with cols[i % 2]:
+                    _game_card(g)
+        else:
+            st.info("추천 결과가 없습니다. (LightGCN 학습 중이거나 데이터 부족)")
 
 
 # ── 라우터 ────────────────────────────────────────────────────────────────────
