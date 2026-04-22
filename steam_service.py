@@ -1,10 +1,17 @@
 from __future__ import annotations
+import os
 import requests
 from dummy_data import GAME_CATALOG, DUMMY_OWNED_GAMES
-from config import config
 
 def _get_api_key() -> str:
-    return config.STEAM_API_KEY
+    key = os.environ.get("STEAM_API_KEY", "")
+    if key:
+        return key
+    try:
+        import streamlit as st
+        return st.secrets.get("STEAM_API_KEY", "")
+    except Exception:
+        return ""
 
 
 class SteamService:
