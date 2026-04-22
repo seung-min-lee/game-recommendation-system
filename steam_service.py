@@ -145,6 +145,51 @@ class SteamService:
                     result[fid] = games
         return result
 
+    def get_reviews(self, app_id: int, num: int = 6) -> dict:
+        """
+        Steam Store 리뷰 API.
+        반환: {
+          "summary": {"total", "positive_pct", "score_desc"},
+          "reviews": [{"text", "voted_up", "playtime_hours", "language"}]
+        }
+        """
+        try:
+            url = f"https://store.steampowered.com/appreviews/{app_id}"
+            res = requests.get(url, params={
+                "json": 1,
+                "num_per_page": num,
+                "language": "all",
+                "review_type": "all",
+                "purchase_type": "steam",
+                "filter": "helpful",
+            }, timeout=6)
+            data = res.json()
+            qs = data.get("query_summary", {})
+            total    = qs.get("total_reviews", 0)
+            positive = qs.get("total_positive", 0)
+            pct      = round(positive / total * 100) if total > 0 else 0
+            reviews  = []
+            for r in data.get("reviews", [])[:num]:
+                text = r.get("review", "").strip().replace("\n", " ")
+                if len(text) > 220:
+                    text = text[:220] + "..."
+                reviews.append({
+                    "text": text,
+                    "voted_up": r.get("voted_up", True),
+                    "playtime_hours": round(r.get("author", {}).get("playtime_forever", 0) / 60, 1),
+                    "language": r.get("language", ""),
+                })
+            return {
+                "summary": {
+                    "total": total,
+                    "positive_pct": pct,
+                    "score_desc": qs.get("review_score_desc", ""),
+                },
+                "reviews": reviews,
+            }
+        except Exception:
+            return {"summary": {}, "reviews": []}
+
     def get_game_detail(self, app_id: int) -> dict | None:
         info = GAME_CATALOG.get(app_id)
         if info:

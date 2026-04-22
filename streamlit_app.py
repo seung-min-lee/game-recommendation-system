@@ -145,6 +145,113 @@ def _render_carousel(games: list):
     components.html(html, height=360, scrolling=False)
 
 
+def _show_reviews_panel(games: list, key_prefix: str):
+    """캐러셀 아래에 게임 선택 → Steam 리뷰 패널 표시."""
+    if not games:
+        return
+
+    names = [g.get("name", "Unknown") for g in games]
+    selected = st.selectbox(
+        "리뷰 보기",
+        options=["🔍 게임을 선택하면 Steam 리뷰를 표시합니다"] + names,
+        key=f"review_sel_{key_prefix}",
+        label_visibility="collapsed",
+    )
+
+    if selected.startswith("🔍"):
+        return
+
+    game = next((g for g in games if g.get("name") == selected), None)
+    if not game:
+        return
+
+    app_id = game["app_id"]
+    cache_key = f"_rv_{app_id}"
+    if cache_key not in st.session_state:
+        with st.spinner("Steam 리뷰 불러오는 중..."):
+            st.session_state[cache_key] = steam.get_reviews(app_id)
+
+    rv      = st.session_state[cache_key]
+    summary = rv.get("summary", {})
+    reviews = rv.get("reviews", [])
+
+    total   = summary.get("total", 0)
+    pct     = summary.get("positive_pct", 0)
+    desc    = summary.get("score_desc", "")
+    mc      = game.get("metacritic") or 0
+
+    # 평점 색상
+    if pct >= 85:
+        pct_color = "#46d369"
+    elif pct >= 60:
+        pct_color = "#f5c518"
+    else:
+        pct_color = "#E50914"
+
+    mc_badge = (
+        f'<span style="background:#1a1a2e;color:#7986cb;border:1px solid #7986cb;'
+        f'border-radius:4px;padding:2px 8px;font-size:0.8rem;font-weight:bold;margin-left:10px;">'
+        f'Metacritic {mc}</span>'
+    ) if mc else ""
+
+    st.markdown(f"""
+    <div style="background:#181818;border-radius:10px;padding:20px 24px;margin-top:4px;
+                border-left:4px solid {pct_color};">
+        <div style="display:flex;align-items:center;gap:12px;margin-bottom:16px;flex-wrap:wrap;">
+            <span style="font-size:1.1rem;font-weight:bold;color:#fff;">{selected}</span>
+            <span style="background:{pct_color};color:#000;border-radius:4px;
+                         padding:3px 10px;font-size:0.85rem;font-weight:bold;">{desc}</span>
+            <span style="color:{pct_color};font-weight:bold;font-size:0.95rem;">
+                👍 {pct}%
+            </span>
+            <span style="color:#737373;font-size:0.82rem;">전체 리뷰 {total:,}개</span>
+            {mc_badge}
+        </div>
+    """, unsafe_allow_html=True)
+
+    if reviews:
+        cols = st.columns(min(len(reviews), 3))
+        for i, r in enumerate(reviews[:3]):
+            icon  = "👍" if r["voted_up"] else "👎"
+            color = "#46d369" if r["voted_up"] else "#E50914"
+            pt    = r["playtime_hours"]
+            text  = r["text"] or "(리뷰 내용 없음)"
+            with cols[i]:
+                st.markdown(f"""
+                <div style="background:#202020;border-radius:8px;padding:14px;height:100%;
+                             border-top:2px solid {color};">
+                    <div style="color:{color};font-weight:bold;margin-bottom:8px;">
+                        {icon} &nbsp;플레이 {pt}시간
+                    </div>
+                    <p style="color:#d0d0d0;font-size:0.82rem;line-height:1.5;margin:0;">{text}</p>
+                </div>
+                """, unsafe_allow_html=True)
+        if len(reviews) > 3:
+            st.markdown("<div style='margin-top:12px;'>", unsafe_allow_html=True)
+            cols2 = st.columns(len(reviews) - 3)
+            for i, r in enumerate(reviews[3:]):
+                icon  = "👍" if r["voted_up"] else "👎"
+                color = "#46d369" if r["voted_up"] else "#E50914"
+                pt    = r["playtime_hours"]
+                text  = r["text"] or "(리뷰 내용 없음)"
+                with cols2[i]:
+                    st.markdown(f"""
+                    <div style="background:#202020;border-radius:8px;padding:14px;height:100%;
+                                 border-top:2px solid {color};">
+                        <div style="color:{color};font-weight:bold;margin-bottom:8px;">
+                            {icon} &nbsp;플레이 {pt}시간
+                        </div>
+                        <p style="color:#d0d0d0;font-size:0.82rem;line-height:1.5;margin:0;">{text}</p>
+                    </div>
+                    """, unsafe_allow_html=True)
+            st.markdown("</div>", unsafe_allow_html=True)
+    else:
+        st.markdown('<p style="color:#737373;font-size:0.85rem;">리뷰 데이터를 가져올 수 없습니다.</p>',
+                    unsafe_allow_html=True)
+
+    st.markdown("</div>", unsafe_allow_html=True)
+
+
 def _carousel_html(games: list) -> str:
     if not games:
         return '<p style="color:#b3b3b3;padding:20px 0;">추천 결과가 없습니다.</p>'
@@ -484,15 +591,21 @@ def page_recommendations():
 
     with tab1:
         st.markdown('<h2 style="font-size:1.5rem;padding-left:10px;border-left:4px solid #E50914;">🎮 장르 기반 추천</h2>', unsafe_allow_html=True)
-        _render_carousel(recs.get("genre_based", []))
+        genre_games = recs.get("genre_based", [])
+        _render_carousel(genre_games)
+        _show_reviews_panel(genre_games, "genre")
 
     with tab2:
         st.markdown('<h2 style="font-size:1.5rem;padding-left:10px;border-left:4px solid #E50914;">👥 유사 유저 기반 추천</h2>', unsafe_allow_html=True)
-        _render_carousel(recs.get("collab_based", []))
+        collab_games = recs.get("collab_based", [])
+        _render_carousel(collab_games)
+        _show_reviews_panel(collab_games, "collab")
 
     with tab3:
         st.markdown('<h2 style="font-size:1.5rem;padding-left:10px;border-left:4px solid #E50914;">💎 숨겨진 명작</h2>', unsafe_allow_html=True)
-        _render_carousel(recs.get("hidden_gems", []))
+        hidden_games = recs.get("hidden_gems", [])
+        _render_carousel(hidden_games)
+        _show_reviews_panel(hidden_games, "hidden")
 
     with tab4:
         st.markdown('<h2 style="font-size:1.5rem;padding-left:10px;border-left:4px solid #E50914;">🕸️ LightGCN 그래프 추천</h2>', unsafe_allow_html=True)
@@ -512,6 +625,7 @@ def page_recommendations():
         st.plotly_chart(fig_graph, use_container_width=True)
         st.markdown("---")
         _render_carousel(graph_games)
+        _show_reviews_panel(graph_games, "graph")
 
 
 # ── 라우터 ────────────────────────────────────────────────────────────────────
