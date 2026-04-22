@@ -1,4 +1,5 @@
 import streamlit as st
+import streamlit.components.v1 as components
 import plotly.express as px
 import plotly.graph_objects as go
 import pandas as pd
@@ -132,6 +133,11 @@ def _get_recs(steam_id, owned_games):
         except Exception:
             pass
     return {**recommender.get_recommendations(steam_id, owned_games), "source": "local"}
+
+
+def _render_carousel(games: list):
+    html = _carousel_html(games)
+    components.html(html, height=300, scrolling=False)
 
 
 def _carousel_html(games: list) -> str:
@@ -443,15 +449,15 @@ def page_recommendations():
 
     with tab1:
         st.markdown('<h2 style="font-size:1.5rem;padding-left:10px;border-left:4px solid #E50914;">🎮 장르 기반 추천</h2>', unsafe_allow_html=True)
-        st.markdown(_carousel_html(recs.get("genre_based", [])), unsafe_allow_html=True)
+        _render_carousel(recs.get("genre_based", []))
 
     with tab2:
         st.markdown('<h2 style="font-size:1.5rem;padding-left:10px;border-left:4px solid #E50914;">👥 유사 유저 기반 추천</h2>', unsafe_allow_html=True)
-        st.markdown(_carousel_html(recs.get("collab_based", [])), unsafe_allow_html=True)
+        _render_carousel(recs.get("collab_based", []))
 
     with tab3:
         st.markdown('<h2 style="font-size:1.5rem;padding-left:10px;border-left:4px solid #E50914;">💎 숨겨진 명작</h2>', unsafe_allow_html=True)
-        st.markdown(_carousel_html(recs.get("hidden_gems", [])), unsafe_allow_html=True)
+        _render_carousel(recs.get("hidden_gems", []))
 
     with tab4:
         st.markdown('<h2 style="font-size:1.5rem;padding-left:10px;border-left:4px solid #E50914;">🕸️ LightGCN 그래프 추천</h2>', unsafe_allow_html=True)
@@ -470,7 +476,7 @@ def page_recommendations():
         )
         st.plotly_chart(fig_graph, use_container_width=True)
         st.markdown("---")
-        st.markdown(_carousel_html(graph_games), unsafe_allow_html=True)
+        _render_carousel(graph_games)
 
 
 # ── 라우터 ────────────────────────────────────────────────────────────────────
