@@ -657,54 +657,42 @@ def page_dashboard():
 
     ch1, ch2 = st.columns(2)
 
-    # 색상환 전체를 고르게 분산한 26가지 완전히 구별되는 색상
-    GENRE_COLORS = {
-        "Action":         "#FF2D2D",  # 선명한 빨강
-        "FPS":            "#FF6A00",  # 진한 주황
-        "Adventure":      "#FFB300",  # 황금 노랑
-        "Simulation":     "#CCDD00",  # 라임 옐로
-        "Platformer":     "#7ED321",  # 연두
-        "Open World":     "#00C853",  # 초록
-        "Survival":       "#00BFA5",  # 민트 그린
-        "Roguelike":      "#00E5FF",  # 청록 시안
-        "MOBA":           "#00B0FF",  # 하늘파랑
-        "Co-op":          "#2979FF",  # 파랑
-        "RPG":            "#651FFF",  # 보라파랑
-        "Strategy":       "#D500F9",  # 진보라
-        "Horror":         "#AA00FF",  # 네온 보라
-        "Metroidvania":   "#C51162",  # 진분홍
-        "Indie":          "#FF4081",  # 핫핑크
-        "Story Rich":     "#F06292",  # 연분홍
-        "Hack and Slash": "#FF3D00",  # 빨간 주황
-        "Shooter":        "#FF6D00",  # 주황
-        "Souls-like":     "#8D6E63",  # 브라운
-        "Battle Royale":  "#F57F17",  # 다크 앰버
-        "Tactical":       "#546E7A",  # 슬레이트 블루그레이
-        "Turn-Based":     "#43A047",  # 미디엄 그린
-        "Sci-fi":         "#0097A7",  # 딥 시안
-        "Sandbox":        "#FB8C00",  # 오렌지
-        "MMORPG":         "#5E35B1",  # 딥 인디고
-        "Racing":         "#E53935",  # 레드
-    }
-    # GENRE_COLORS에 없는 장르를 위한 폴백 — 위 26색과 겹치지 않는 색들
-    FALLBACK_PALETTE = [
-        "#26C6DA","#9CCC65","#FFA726","#AB47BC","#EC407A",
-        "#29B6F6","#66BB6A","#FFCA28","#8D6E63","#78909C",
-    ]
-
-    # 장르 → 색상 매핑 함수 (pie와 bar 공유)
-    def get_genre_color(genre: str, idx: int = 0) -> str:
-        return GENRE_COLORS.get(genre, FALLBACK_PALETTE[idx % len(FALLBACK_PALETTE)])
+    def _build_genre_color_map(genre_labels: list[str]) -> dict[str, str]:
+        """
+        실제 등장한 장르 수에 맞춰 색상환을 균등 분할.
+        몇 개가 나오든 항상 최대 거리로 분산 → 인접 색 절대 안 겹침.
+        """
+        import colorsys
+        n = len(genre_labels)
+        if n == 0:
+            return {}
+        # 황금각(137.5°) 오프셋으로 시작 hue 결정 → 인접 슬라이스가 보색에 가깝게
+        golden = 0.618033988749895
+        hue = 0.0
+        result = {}
+        for i, genre in enumerate(genre_labels):
+            # i짝수: 채도 높고 밝게 / i홀수: 채도 낮고 약간 어둡게 → 밝기 교대로 추가 구분
+            if i % 2 == 0:
+                s, v = 0.88, 0.96
+            else:
+                s, v = 0.65, 0.78
+            r, g, b = colorsys.hsv_to_rgb(hue % 1.0, s, v)
+            result[genre] = "#{:02X}{:02X}{:02X}".format(int(r*255), int(g*255), int(b*255))
+            hue += golden  # 황금각 순환 → 연속 두 색이 색상환 반대편에 위치
+        return result
 
     with ch1:
         st.markdown('<h3 style="text-align:center;margin-bottom:10px;color:#fff;">선호하는 장르</h3>',
                     unsafe_allow_html=True)
+        genre_color_map: dict[str, str] = {}
         if genre_dist:
             items = list(genre_dist.items())[:8]
             labels = [g for g, _ in items]
             values = [round(v["minutes"] / 60, 1) for _, v in items]
             pcts   = [v["percentage"] for _, v in items]
-            colors = [get_genre_color(g, i) for i, g in enumerate(labels)]
+
+            genre_color_map = _build_genre_color_map(labels)
+            colors = [genre_color_map[g] for g in labels]
             text_labels = [f"{g}<br>{p}%" for g, p in zip(labels, pcts)]
 
             fig = go.Figure(go.Pie(
@@ -734,11 +722,15 @@ def page_dashboard():
         st.markdown('<h3 style="text-align:center;margin-bottom:10px;color:#fff;">가장 많이 플레이한 게임</h3>',
                     unsafe_allow_html=True)
         if top5:
-            # 각 게임의 주 장르 색상을 pie chart와 동일하게 매핑
+            # 각 게임의 주 장르 → pie chart와 동일한 색상 매핑
             bar_colors = []
             for i, g in enumerate(top5):
                 primary_genre = (g.get("genres") or [""])[0]
-                bar_colors.append(get_genre_color(primary_genre, i))
+                # pie에 없는 장르면 genre_color_map 확장
+                if primary_genre and primary_genre not in genre_color_map:
+                    all_labels = list(genre_color_map.keys()) + [primary_genre]
+                    genre_color_map = _build_genre_color_map(all_labels)
+                bar_colors.append(genre_color_map.get(primary_genre, "#888888"))
 
             names  = [g["name"][:22] for g in top5]
             hours  = [g["playtime_hours"] for g in top5]
