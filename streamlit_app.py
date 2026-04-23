@@ -775,9 +775,17 @@ def page_login():
                                   label_visibility="collapsed")
 
         st.markdown("<div style='height:8px'></div>", unsafe_allow_html=True)
-        _, btn_col, _ = st.columns([1, 2, 1])
-        with btn_col:
-            login_clicked = st.button("시작하기", key="login_btn")
+        st.markdown("""
+        <style>
+        div[data-testid="stButton"]:has(button[kind="primary"]) {
+            display: flex; justify-content: center;
+        }
+        div[data-testid="stButton"]:has(button[kind="primary"]) button {
+            width: 50% !important;
+        }
+        </style>
+        """, unsafe_allow_html=True)
+        login_clicked = st.button("시작하기", key="login_btn", type="primary")
 
         st.markdown("""
         <div style="display:flex;align-items:center;color:#737373;font-size:0.9rem;margin:22px 0 14px;">
