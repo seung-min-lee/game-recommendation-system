@@ -656,21 +656,61 @@ def page_dashboard():
     top5       = stats.get("top5_games", [])
 
     ch1, ch2 = st.columns(2)
+    # 장르별 고유 색상 팔레트
+    GENRE_COLORS = {
+        "Action":       "#E50914", "FPS":          "#FF6B35",
+        "RPG":          "#4A90D9", "Adventure":    "#F5A623",
+        "Strategy":     "#7B68EE", "Simulation":   "#50C878",
+        "Indie":        "#FF69B4", "Shooter":      "#FF8C00",
+        "Souls-like":   "#C0392B", "Open World":   "#27AE60",
+        "Survival":     "#E67E22", "Horror":       "#8E44AD",
+        "MOBA":         "#16A085", "Battle Royale":"#D35400",
+        "Hack and Slash":"#2980B9","Platformer":   "#F39C12",
+        "Roguelike":    "#1ABC9C", "Racing":       "#E74C3C",
+        "Metroidvania": "#9B59B6", "Co-op":        "#3498DB",
+        "Turn-Based":   "#2ECC71", "Sci-fi":       "#00BCD4",
+        "Sandbox":      "#FF9800", "MMORPG":       "#673AB7",
+        "Tactical":     "#795548", "Story Rich":   "#F06292",
+    }
+    FALLBACK_PALETTE = [
+        "#E50914","#FF6B35","#4A90D9","#F5A623","#7B68EE",
+        "#50C878","#FF69B4","#FF8C00","#C0392B","#27AE60",
+    ]
+
     with ch1:
         st.markdown('<h3 style="text-align:center;margin-bottom:10px;color:#fff;">선호하는 장르</h3>',
                     unsafe_allow_html=True)
         if genre_dist:
-            df = pd.DataFrame([{"장르": g, "시간": round(v["minutes"]/60, 1)}
-                                for g, v in list(genre_dist.items())[:6]])
-            colors = ["#E50914", "#B20710", "#831010", "#5A0A0A", "#4A4A4A", "#2B2B2B"]
+            items = list(genre_dist.items())[:8]
+            labels = [g for g, _ in items]
+            values = [round(v["minutes"] / 60, 1) for _, v in items]
+            pcts   = [v["percentage"] for _, v in items]
+            colors = [GENRE_COLORS.get(g, FALLBACK_PALETTE[i % len(FALLBACK_PALETTE)])
+                      for i, g in enumerate(labels)]
+
+            # 레이블: "장르명\n34.8%" 형식
+            text_labels = [f"{g}<br>{p}%" for g, p in zip(labels, pcts)]
+
             fig = go.Figure(go.Pie(
-                labels=df["장르"], values=df["시간"], hole=0.45,
-                marker=dict(colors=colors[:len(df)], line=dict(color="#141414", width=2)),
+                labels=labels,
+                values=values,
+                hole=0.42,
+                marker=dict(colors=colors, line=dict(color="#141414", width=2)),
+                text=text_labels,
+                textinfo="text",          # 조각 위에 장르명+퍼센트 표시
+                textposition="outside",
+                hovertemplate="<b>%{label}</b><br>%{value}시간 (%{percent})<extra></extra>",
             ))
             fig.update_layout(
                 paper_bgcolor="#181818", plot_bgcolor="#181818",
-                font_color="#b3b3b3", margin=dict(t=10, b=10),
-                legend=dict(font=dict(color="#b3b3b3")), showlegend=True,
+                font=dict(color="#e5e5e5", size=11),
+                margin=dict(t=40, b=40, l=60, r=60),
+                showlegend=True,
+                legend=dict(
+                    font=dict(color="#b3b3b3", size=11),
+                    bgcolor="rgba(0,0,0,0)",
+                    orientation="v",
+                ),
             )
             st.plotly_chart(fig, use_container_width=True)
 
