@@ -656,26 +656,45 @@ def page_dashboard():
     top5       = stats.get("top5_games", [])
 
     ch1, ch2 = st.columns(2)
-    # 장르별 고유 색상 팔레트
+
+    # 색상환 전체를 고르게 분산한 26가지 완전히 구별되는 색상
     GENRE_COLORS = {
-        "Action":       "#E50914", "FPS":          "#FF6B35",
-        "RPG":          "#4A90D9", "Adventure":    "#F5A623",
-        "Strategy":     "#7B68EE", "Simulation":   "#50C878",
-        "Indie":        "#FF69B4", "Shooter":      "#FF8C00",
-        "Souls-like":   "#C0392B", "Open World":   "#27AE60",
-        "Survival":     "#E67E22", "Horror":       "#8E44AD",
-        "MOBA":         "#16A085", "Battle Royale":"#D35400",
-        "Hack and Slash":"#2980B9","Platformer":   "#F39C12",
-        "Roguelike":    "#1ABC9C", "Racing":       "#E74C3C",
-        "Metroidvania": "#9B59B6", "Co-op":        "#3498DB",
-        "Turn-Based":   "#2ECC71", "Sci-fi":       "#00BCD4",
-        "Sandbox":      "#FF9800", "MMORPG":       "#673AB7",
-        "Tactical":     "#795548", "Story Rich":   "#F06292",
+        "Action":         "#FF2D2D",  # 선명한 빨강
+        "FPS":            "#FF6A00",  # 진한 주황
+        "Adventure":      "#FFB300",  # 황금 노랑
+        "Simulation":     "#CCDD00",  # 라임 옐로
+        "Platformer":     "#7ED321",  # 연두
+        "Open World":     "#00C853",  # 초록
+        "Survival":       "#00BFA5",  # 민트 그린
+        "Roguelike":      "#00E5FF",  # 청록 시안
+        "MOBA":           "#00B0FF",  # 하늘파랑
+        "Co-op":          "#2979FF",  # 파랑
+        "RPG":            "#651FFF",  # 보라파랑
+        "Strategy":       "#D500F9",  # 진보라
+        "Horror":         "#AA00FF",  # 네온 보라
+        "Metroidvania":   "#C51162",  # 진분홍
+        "Indie":          "#FF4081",  # 핫핑크
+        "Story Rich":     "#F06292",  # 연분홍
+        "Hack and Slash": "#FF3D00",  # 빨간 주황
+        "Shooter":        "#FF6D00",  # 주황
+        "Souls-like":     "#8D6E63",  # 브라운
+        "Battle Royale":  "#F57F17",  # 다크 앰버
+        "Tactical":       "#546E7A",  # 슬레이트 블루그레이
+        "Turn-Based":     "#43A047",  # 미디엄 그린
+        "Sci-fi":         "#0097A7",  # 딥 시안
+        "Sandbox":        "#FB8C00",  # 오렌지
+        "MMORPG":         "#5E35B1",  # 딥 인디고
+        "Racing":         "#E53935",  # 레드
     }
+    # GENRE_COLORS에 없는 장르를 위한 폴백 — 위 26색과 겹치지 않는 색들
     FALLBACK_PALETTE = [
-        "#E50914","#FF6B35","#4A90D9","#F5A623","#7B68EE",
-        "#50C878","#FF69B4","#FF8C00","#C0392B","#27AE60",
+        "#26C6DA","#9CCC65","#FFA726","#AB47BC","#EC407A",
+        "#29B6F6","#66BB6A","#FFCA28","#8D6E63","#78909C",
     ]
+
+    # 장르 → 색상 매핑 함수 (pie와 bar 공유)
+    def get_genre_color(genre: str, idx: int = 0) -> str:
+        return GENRE_COLORS.get(genre, FALLBACK_PALETTE[idx % len(FALLBACK_PALETTE)])
 
     with ch1:
         st.markdown('<h3 style="text-align:center;margin-bottom:10px;color:#fff;">선호하는 장르</h3>',
@@ -685,10 +704,7 @@ def page_dashboard():
             labels = [g for g, _ in items]
             values = [round(v["minutes"] / 60, 1) for _, v in items]
             pcts   = [v["percentage"] for _, v in items]
-            colors = [GENRE_COLORS.get(g, FALLBACK_PALETTE[i % len(FALLBACK_PALETTE)])
-                      for i, g in enumerate(labels)]
-
-            # 레이블: "장르명\n34.8%" 형식
+            colors = [get_genre_color(g, i) for i, g in enumerate(labels)]
             text_labels = [f"{g}<br>{p}%" for g, p in zip(labels, pcts)]
 
             fig = go.Figure(go.Pie(
@@ -697,7 +713,7 @@ def page_dashboard():
                 hole=0.42,
                 marker=dict(colors=colors, line=dict(color="#141414", width=2)),
                 text=text_labels,
-                textinfo="text",          # 조각 위에 장르명+퍼센트 표시
+                textinfo="text",
                 textposition="outside",
                 hovertemplate="<b>%{label}</b><br>%{value}시간 (%{percent})<extra></extra>",
             ))
@@ -718,15 +734,28 @@ def page_dashboard():
         st.markdown('<h3 style="text-align:center;margin-bottom:10px;color:#fff;">가장 많이 플레이한 게임</h3>',
                     unsafe_allow_html=True)
         if top5:
-            df2 = pd.DataFrame([{"게임": g["name"][:22], "시간": g["playtime_hours"]} for g in top5])
+            # 각 게임의 주 장르 색상을 pie chart와 동일하게 매핑
+            bar_colors = []
+            for i, g in enumerate(top5):
+                primary_genre = (g.get("genres") or [""])[0]
+                bar_colors.append(get_genre_color(primary_genre, i))
+
+            names  = [g["name"][:22] for g in top5]
+            hours  = [g["playtime_hours"] for g in top5]
+            genres = [(g.get("genres") or ["기타"])[0] for g in top5]
+
             fig2 = go.Figure(go.Bar(
-                x=df2["시간"], y=df2["게임"], orientation="h",
-                marker=dict(color="#E50914", cornerradius=4),
+                x=hours,
+                y=names,
+                orientation="h",
+                marker=dict(color=bar_colors, cornerradius=4),
+                customdata=genres,
+                hovertemplate="<b>%{y}</b><br>%{x}시간<br>장르: %{customdata}<extra></extra>",
             ))
             fig2.update_layout(
                 paper_bgcolor="#181818", plot_bgcolor="#181818",
-                font_color="#b3b3b3", margin=dict(t=10, b=10, l=10),
-                xaxis=dict(gridcolor="rgba(255,255,255,0.05)"),
+                font_color="#b3b3b3", margin=dict(t=10, b=10, l=10, r=10),
+                xaxis=dict(gridcolor="rgba(255,255,255,0.05)", title="플레이 시간 (h)"),
                 yaxis=dict(gridcolor="rgba(0,0,0,0)", autorange="reversed"),
             )
             st.plotly_chart(fig2, use_container_width=True)

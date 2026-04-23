@@ -24,6 +24,7 @@ class GameRecommender:
                 "app_id": g.get("app_id"),
                 "name": g.get("name", "Unknown"),
                 "playtime_hours": round(g.get("playtime_minutes", 0) / 60, 1),
+                "genres": g.get("genres", []),
                 "header_image": g.get(
                     "header_image",
                     f"https://cdn.akamai.steamstatic.com/steam/apps/{g.get('app_id')}/header.jpg",
