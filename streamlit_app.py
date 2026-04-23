@@ -1017,7 +1017,7 @@ def page_dashboard():
             st.plotly_chart(fig2, use_container_width=True)
 
     st.markdown("<br>", unsafe_allow_html=True)
-    _, btn_col, _ = st.columns([2, 3, 2])
+    _, btn_col, _ = st.columns([1, 1, 1])
     with btn_col:
         if st.button("맞춤 추천작 보기 ➔", key="go_recs"):
             st.session_state.page = "recommendations"
