@@ -428,7 +428,7 @@ def _show_reviews_panel(games: list, key_prefix: str):
 
     # ── 페이지 번호 (카드 그리드 아래) ───────────────────────────────────────
     if total_pages > 1:
-        _, pg_col = st.columns([1, 3])
+        _, pg_col, _ = st.columns([1, 2, 1])
         with pg_col:
             st.markdown(
                 f'<p style="color:#737373;font-size:0.75rem;margin:8px 0 2px;">'
