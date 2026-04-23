@@ -760,35 +760,44 @@ def page_login():
     _, col, _ = st.columns([1, 1.4, 1])
     with col:
         st.markdown("""
-        <div style="background:rgba(0,0,0,0.75);border-radius:8px;padding:50px 40px;margin-top:60px;text-align:center;">
+        <div style="background:rgba(0,0,0,0.75);border-radius:8px;padding:40px 40px 30px;margin-top:60px;text-align:center;">
+            <div style="font-size:3.5rem;margin-bottom:10px;">🎮</div>
             <h1 style="color:#E50914;font-size:3rem;font-weight:900;letter-spacing:2px;
                        text-transform:uppercase;margin-bottom:10px;">Game Finder</h1>
-            <p style="color:#b3b3b3;font-size:1rem;margin-bottom:40px;line-height:1.6;">
+            <p style="color:#b3b3b3;font-size:1rem;margin-bottom:0;line-height:1.6;">
                 당신의 플레이 기록을 분석하여<br>최고의 게임을 추천합니다.
             </p>
         </div>
         """, unsafe_allow_html=True)
 
+        st.markdown("<div style='height:14px'></div>", unsafe_allow_html=True)
         steam_id = st.text_input("", placeholder="스팀 ID 입력 (예: 76561198000000001)",
                                   label_visibility="collapsed")
 
-        st.markdown("<div style='height:10px'></div>", unsafe_allow_html=True)
-        login_clicked = st.button("시작하기", key="login_btn")
+        st.markdown("<div style='height:8px'></div>", unsafe_allow_html=True)
+        _, btn_col, _ = st.columns([1, 2, 1])
+        with btn_col:
+            login_clicked = st.button("시작하기", key="login_btn")
 
         st.markdown("""
-        <div style="display:flex;align-items:center;color:#737373;font-size:0.9rem;margin:20px 0;">
+        <div style="display:flex;align-items:center;color:#737373;font-size:0.9rem;margin:22px 0 14px;">
             <div style="flex:1;border-bottom:1px solid #333;"></div>
-            <span style="padding:0 15px;">또는 데모 계정</span>
+            <span style="padding:0 15px;">Steam ID를 잊어버리셨나요?</span>
             <div style="flex:1;border-bottom:1px solid #333;"></div>
         </div>
+        <div style="text-align:center;margin-bottom:10px;">
+            <a href="https://store.steampowered.com/login/" target="_blank"
+               style="display:inline-block;background:#1b2838;color:#c7d5e0;
+                      border:1px solid #4c6b22;border-radius:4px;padding:10px 24px;
+                      font-size:0.9rem;font-weight:bold;text-decoration:none;
+                      transition:background 0.2s;">
+                🔗 Steam 로그인 페이지에서 확인하기
+            </a>
+        </div>
+        <p style="color:#555;font-size:0.75rem;text-align:center;margin:0;">
+            로그인 후 우측 상단 프로필 → 프로필 보기 → URL의 숫자가 Steam ID입니다.
+        </p>
         """, unsafe_allow_html=True)
-
-        demo_ids = ["76561198000000001", "76561198000000002", "76561198000000003"]
-        dcols = st.columns(3)
-        for i, did in enumerate(demo_ids):
-            if dcols[i].button(f"Demo {i+1}", key=f"demo_{i}"):
-                steam_id = did
-                login_clicked = True
 
         if login_clicked:
             if not steam_id or not steam_id.strip():
