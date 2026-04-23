@@ -87,9 +87,18 @@ st.markdown("""
 
     /* 구분선 */
     hr { border-color: #2f2f2f !important; }
-
     h1, h2, h3, h4 { color: #ffffff !important; }
     p { color: #e5e5e5; }
+
+    /* 리뷰 페이지 라디오 버튼 소형화 */
+    div[data-testid="stRadio"] label {
+        font-size: 0.72rem !important;
+        padding: 2px 6px !important;
+    }
+    div[data-testid="stRadio"] > div {
+        gap: 4px !important;
+        flex-wrap: wrap !important;
+    }
 </style>
 """, unsafe_allow_html=True)
 
@@ -247,29 +256,25 @@ def _show_reviews_panel(games: list, key_prefix: str):
         st.markdown("<div style='height:10px'></div>", unsafe_allow_html=True)
     st.markdown("</div>", unsafe_allow_html=True)
 
-    # ── 페이지 번호 버튼 ─────────────────────────────────────────────────────
+    # ── 페이지 네비게이션 (st.radio — 버튼보다 1.4배 작음) ──────────────────
     if total_pages > 1:
         st.markdown(
-            f'<p style="color:#737373;font-size:0.78rem;text-align:center;margin:6px 0 4px;">'
-            f'페이지 {cur_page + 1} / {total_pages} &nbsp;(총 {len(all_reviews)}개 리뷰)</p>',
+            f'<p style="color:#737373;font-size:0.75rem;margin:10px 0 2px;">'
+            f'총 {len(all_reviews)}개 리뷰 · 페이지당 {PER_PAGE}개</p>',
             unsafe_allow_html=True,
         )
-        # 최대 10개 페이지 버튼 + 이전/다음
-        visible = list(range(total_pages))[:10]
-        nav_cols = st.columns(len(visible) + 2)
-
-        if nav_cols[0].button("◀", key=f"rv_prev_{key_prefix}_{app_id}", disabled=cur_page == 0):
-            st.session_state[page_key] = cur_page - 1
-            st.rerun()
-
-        for idx, p in enumerate(visible):
-            label = f"**{p+1}**" if p == cur_page else str(p + 1)
-            if nav_cols[idx + 1].button(label, key=f"rv_p{p}_{key_prefix}_{app_id}"):
-                st.session_state[page_key] = p
-                st.rerun()
-
-        if nav_cols[-1].button("▶", key=f"rv_next_{key_prefix}_{app_id}", disabled=cur_page >= total_pages - 1):
-            st.session_state[page_key] = cur_page + 1
+        # radio는 버튼 대비 자연스럽게 소형 렌더링
+        chosen = st.radio(
+            "",
+            options=list(range(1, min(total_pages, 10) + 1)),
+            index=cur_page,
+            horizontal=True,
+            key=f"rv_radio_{key_prefix}_{app_id}",
+            label_visibility="collapsed",
+            format_func=lambda p: f"{p}",
+        )
+        if chosen - 1 != cur_page:
+            st.session_state[page_key] = chosen - 1
             st.rerun()
 
 
@@ -619,58 +624,59 @@ def page_dashboard():
     total_h  = stats.get("total_playtime_hours", 0)
     total_g  = stats.get("total_games", 0)
 
-    # 프로필 헤더
-    avatar_html = f'<img src="{avatar}" style="width:80px;height:80px;border-radius:4px;border:2px solid #E50914;margin-right:20px;">' if avatar else ""
-    st.markdown(f"""
-    <div style="display:flex;align-items:center;background:#181818;padding:25px 30px;
-                border-radius:8px;margin-bottom:30px;">
-        {avatar_html}
-        <div>
-            <h2 style="color:#fff;font-size:1.8rem;margin-bottom:5px;">{username} 님의 플레이 기록</h2>
-            <p style="color:#b3b3b3;font-size:1rem;">
-                총 플레이타임: {total_h:,} 시간 &nbsp;·&nbsp; 보유 게임: {total_g}개
-            </p>
-        </div>
-        <div style="margin-left:auto;">
-    """, unsafe_allow_html=True)
-
-    logout_col = st.columns([8, 1])[1]
-    with logout_col:
+    # 프로필 헤더 — st.columns로 레이아웃 (unclosed div 없음)
+    hdr_col, btn_col = st.columns([9, 1])
+    with hdr_col:
+        av_html = (
+            f'<img src="{avatar}" style="width:70px;height:70px;border-radius:4px;'
+            f'border:2px solid #E50914;margin-right:18px;vertical-align:middle;">'
+        ) if avatar else ""
+        st.markdown(
+            f'<div style="background:#181818;padding:22px 26px;border-radius:8px;'
+            f'margin-bottom:24px;display:flex;align-items:center;">'
+            f'{av_html}'
+            f'<div>'
+            f'<h2 style="color:#fff;font-size:1.7rem;margin:0 0 4px 0;">{username} 님의 플레이 기록</h2>'
+            f'<p style="color:#b3b3b3;font-size:0.95rem;margin:0;">'
+            f'총 플레이타임: {total_h:,} 시간 &nbsp;·&nbsp; 보유 게임: {total_g}개'
+            f'</p></div></div>',
+            unsafe_allow_html=True,
+        )
+    with btn_col:
+        st.markdown("<div style='height:18px'></div>", unsafe_allow_html=True)
         if st.button("로그아웃", key="logout_btn"):
-            for k in ["steam_id", "user", "stats", "recs", "owned_games"]:
-                st.session_state[k] = None
+            for k in ["steam_id", "user", "stats", "recs", "owned_games",
+                      "friends_games", "friends_profiles", "friends_count"]:
+                st.session_state[k] = None if k not in ("friends_games", "friends_profiles") else {}
             st.session_state.page = "login"
             st.rerun()
 
-    # 차트
+    # 차트 — 독립적인 st.markdown 호출만 사용 (div 분할 없음)
     genre_dist = stats.get("genre_distribution", {})
     top5       = stats.get("top5_games", [])
 
     ch1, ch2 = st.columns(2)
     with ch1:
-        st.markdown('<div style="background:#181818;padding:25px;border-radius:8px;">', unsafe_allow_html=True)
-        st.markdown('<h3 style="text-align:center;margin-bottom:20px;">선호하는 장르</h3>', unsafe_allow_html=True)
+        st.markdown('<h3 style="text-align:center;margin-bottom:10px;color:#fff;">선호하는 장르</h3>',
+                    unsafe_allow_html=True)
         if genre_dist:
             df = pd.DataFrame([{"장르": g, "시간": round(v["minutes"]/60, 1)}
                                 for g, v in list(genre_dist.items())[:6]])
             colors = ["#E50914", "#B20710", "#831010", "#5A0A0A", "#4A4A4A", "#2B2B2B"]
             fig = go.Figure(go.Pie(
-                labels=df["장르"], values=df["시간"],
-                hole=0.45,
+                labels=df["장르"], values=df["시간"], hole=0.45,
                 marker=dict(colors=colors[:len(df)], line=dict(color="#141414", width=2)),
             ))
             fig.update_layout(
                 paper_bgcolor="#181818", plot_bgcolor="#181818",
                 font_color="#b3b3b3", margin=dict(t=10, b=10),
-                legend=dict(font=dict(color="#b3b3b3")),
-                showlegend=True,
+                legend=dict(font=dict(color="#b3b3b3")), showlegend=True,
             )
             st.plotly_chart(fig, use_container_width=True)
-        st.markdown('</div>', unsafe_allow_html=True)
 
     with ch2:
-        st.markdown('<div style="background:#181818;padding:25px;border-radius:8px;">', unsafe_allow_html=True)
-        st.markdown('<h3 style="text-align:center;margin-bottom:20px;">가장 많이 플레이한 게임</h3>', unsafe_allow_html=True)
+        st.markdown('<h3 style="text-align:center;margin-bottom:10px;color:#fff;">가장 많이 플레이한 게임</h3>',
+                    unsafe_allow_html=True)
         if top5:
             df2 = pd.DataFrame([{"게임": g["name"][:22], "시간": g["playtime_hours"]} for g in top5])
             fig2 = go.Figure(go.Bar(
@@ -684,7 +690,6 @@ def page_dashboard():
                 yaxis=dict(gridcolor="rgba(0,0,0,0)", autorange="reversed"),
             )
             st.plotly_chart(fig2, use_container_width=True)
-        st.markdown('</div>', unsafe_allow_html=True)
 
     st.markdown("<br>", unsafe_allow_html=True)
     _, btn_col, _ = st.columns([2, 3, 2])
