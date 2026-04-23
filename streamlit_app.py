@@ -655,43 +655,40 @@ def page_dashboard():
     genre_dist = stats.get("genre_distribution", {})
     top5       = stats.get("top5_games", [])
 
-    ch1, ch2 = st.columns(2)
+    # ── 색상 맵을 두 차트 전에 미리 빌드 ─────────────────────────────────────
+    import colorsys as _cs
 
     def _build_genre_color_map(genre_labels: list[str]) -> dict[str, str]:
-        """
-        실제 등장한 장르 수에 맞춰 색상환을 균등 분할.
-        몇 개가 나오든 항상 최대 거리로 분산 → 인접 색 절대 안 겹침.
-        """
-        import colorsys
-        n = len(genre_labels)
-        if n == 0:
-            return {}
-        # 황금각(137.5°) 오프셋으로 시작 hue 결정 → 인접 슬라이스가 보색에 가깝게
+        """황금각(137.5°) 순환 → 몇 개든 항상 최대 거리로 분산."""
         golden = 0.618033988749895
         hue = 0.0
         result = {}
         for i, genre in enumerate(genre_labels):
-            # i짝수: 채도 높고 밝게 / i홀수: 채도 낮고 약간 어둡게 → 밝기 교대로 추가 구분
-            if i % 2 == 0:
-                s, v = 0.88, 0.96
-            else:
-                s, v = 0.65, 0.78
-            r, g, b = colorsys.hsv_to_rgb(hue % 1.0, s, v)
+            s, v = (0.88, 0.96) if i % 2 == 0 else (0.65, 0.78)
+            r, g, b = _cs.hsv_to_rgb(hue % 1.0, s, v)
             result[genre] = "#{:02X}{:02X}{:02X}".format(int(r*255), int(g*255), int(b*255))
-            hue += golden  # 황금각 순환 → 연속 두 색이 색상환 반대편에 위치
+            hue += golden
         return result
+
+    # 파이차트 장르 + top5 게임 장르를 합쳐서 하나의 색상 맵 생성
+    pie_labels: list[str] = [g for g, _ in list(genre_dist.items())[:8]] if genre_dist else []
+    top5_extra: list[str] = []
+    for game in top5:
+        for genre in (game.get("genres") or []):
+            if genre not in pie_labels and genre not in top5_extra:
+                top5_extra.append(genre)
+    genre_color_map = _build_genre_color_map(pie_labels + top5_extra)
+
+    ch1, ch2 = st.columns(2)
 
     with ch1:
         st.markdown('<h3 style="text-align:center;margin-bottom:10px;color:#fff;">선호하는 장르</h3>',
                     unsafe_allow_html=True)
-        genre_color_map: dict[str, str] = {}
         if genre_dist:
-            items = list(genre_dist.items())[:8]
+            items  = list(genre_dist.items())[:8]
             labels = [g for g, _ in items]
             values = [round(v["minutes"] / 60, 1) for _, v in items]
             pcts   = [v["percentage"] for _, v in items]
-
-            genre_color_map = _build_genre_color_map(labels)
             colors = [genre_color_map[g] for g in labels]
             text_labels = [f"{g}<br>{p}%" for g, p in zip(labels, pcts)]
 
@@ -710,11 +707,8 @@ def page_dashboard():
                 font=dict(color="#e5e5e5", size=11),
                 margin=dict(t=40, b=40, l=60, r=60),
                 showlegend=True,
-                legend=dict(
-                    font=dict(color="#b3b3b3", size=11),
-                    bgcolor="rgba(0,0,0,0)",
-                    orientation="v",
-                ),
+                legend=dict(font=dict(color="#b3b3b3", size=11),
+                            bgcolor="rgba(0,0,0,0)", orientation="v"),
             )
             st.plotly_chart(fig, use_container_width=True)
 
@@ -722,33 +716,47 @@ def page_dashboard():
         st.markdown('<h3 style="text-align:center;margin-bottom:10px;color:#fff;">가장 많이 플레이한 게임</h3>',
                     unsafe_allow_html=True)
         if top5:
-            # 각 게임의 주 장르 → pie chart와 동일한 색상 매핑
-            bar_colors = []
-            for i, g in enumerate(top5):
-                primary_genre = (g.get("genres") or [""])[0]
-                # pie에 없는 장르면 genre_color_map 확장
-                if primary_genre and primary_genre not in genre_color_map:
-                    all_labels = list(genre_color_map.keys()) + [primary_genre]
-                    genre_color_map = _build_genre_color_map(all_labels)
-                bar_colors.append(genre_color_map.get(primary_genre, "#888888"))
+            names = [g["name"][:22] for g in top5]
 
-            names  = [g["name"][:22] for g in top5]
-            hours  = [g["playtime_hours"] for g in top5]
-            genres = [(g.get("genres") or ["기타"])[0] for g in top5]
+            # 각 게임의 장르를 균등 분할한 stacked horizontal bar
+            # 장르가 없는 경우 단색 처리
+            all_bar_genres: list[str] = []
+            for game in top5:
+                for genre in (game.get("genres") or ["기타"]):
+                    if genre not in all_bar_genres:
+                        all_bar_genres.append(genre)
 
-            fig2 = go.Figure(go.Bar(
-                x=hours,
-                y=names,
-                orientation="h",
-                marker=dict(color=bar_colors, cornerradius=4),
-                customdata=genres,
-                hovertemplate="<b>%{y}</b><br>%{x}시간<br>장르: %{customdata}<extra></extra>",
-            ))
+            fig2 = go.Figure()
+            for genre in all_bar_genres:
+                x_vals = []
+                for game in top5:
+                    game_genres = game.get("genres") or ["기타"]
+                    if genre in game_genres:
+                        # 총 플레이 시간을 장르 수로 균등 분할
+                        x_vals.append(round(game["playtime_hours"] / len(game_genres), 1))
+                    else:
+                        x_vals.append(0)
+                color = genre_color_map.get(genre, "#888888")
+                fig2.add_trace(go.Bar(
+                    name=genre,
+                    y=names,
+                    x=x_vals,
+                    orientation="h",
+                    marker=dict(color=color),
+                    hovertemplate=f"<b>%{{y}}</b><br>{genre}: %{{x}}h<extra></extra>",
+                ))
+
             fig2.update_layout(
+                barmode="stack",
                 paper_bgcolor="#181818", plot_bgcolor="#181818",
-                font_color="#b3b3b3", margin=dict(t=10, b=10, l=10, r=10),
+                font_color="#b3b3b3",
+                margin=dict(t=10, b=10, l=10, r=10),
                 xaxis=dict(gridcolor="rgba(255,255,255,0.05)", title="플레이 시간 (h)"),
                 yaxis=dict(gridcolor="rgba(0,0,0,0)", autorange="reversed"),
+                legend=dict(font=dict(color="#b3b3b3", size=10),
+                            bgcolor="rgba(0,0,0,0)", orientation="h",
+                            yanchor="bottom", y=1.02, xanchor="left", x=0),
+                showlegend=True,
             )
             st.plotly_chart(fig2, use_container_width=True)
 
