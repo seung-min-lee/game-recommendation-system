@@ -270,16 +270,16 @@ def _show_reviews_panel(games: list, key_prefix: str):
         sort_key = f"_rv_sort_{key_prefix}_{app_id}"
         sort_opt = st.radio(
             "",
-            options=["👍 긍정 많은 순", "👎 부정 먼저", "⏱ 플레이타임 많은 순", "⏱ 플레이타임 적은 순"],
+            options=["👍 많은 순", "👎 많은 순", "⏱ 플레이타임 많은 순", "⏱ 플레이타임 적은 순"],
             key=sort_key,
             horizontal=True,
             label_visibility="collapsed",
         )
 
     # 정렬 적용
-    if sort_opt == "👍 긍정 많은 순":
+    if sort_opt == "👍 많은 순":
         sorted_reviews = sorted(all_reviews, key=lambda r: (not r["voted_up"], -r.get("playtime_hours", 0)))
-    elif sort_opt == "👎 부정 먼저":
+    elif sort_opt == "👎 많은 순":
         sorted_reviews = sorted(all_reviews, key=lambda r: (r["voted_up"], -r.get("playtime_hours", 0)))
     elif sort_opt == "⏱ 플레이타임 많은 순":
         sorted_reviews = sorted(all_reviews, key=lambda r: -r.get("playtime_hours", 0))
