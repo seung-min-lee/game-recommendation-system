@@ -655,22 +655,64 @@ def page_dashboard():
     genre_dist = stats.get("genre_distribution", {})
     top5       = stats.get("top5_games", [])
 
-    # ── 색상 맵을 두 차트 전에 미리 빌드 ─────────────────────────────────────
+    # ── 장르 색상 맵 (두 차트 전에 미리 빌드) ────────────────────────────────
     import colorsys as _cs
 
+    # 자주 등장하는 장르는 명시적으로 고정 — 비슷한 계열 장르끼리 절대 겹치지 않게
+    _FIXED_GENRE_COLORS: dict[str, str] = {
+        # ─ 빨강 계열 ─
+        "Action":         "#FF1744",  # 선명 빨강
+        "Hack and Slash": "#FF6D00",  # 진한 주황-빨강
+        "Racing":         "#D50000",  # 딥 레드
+        # ─ 주황/노랑 계열 ─
+        "Adventure":      "#FF9100",  # 주황
+        "Sandbox":        "#FFAB40",  # 연한 주황
+        "Battle Royale":  "#FFD600",  # 노랑 ★ 요청
+        "Simulation":     "#FFF176",  # 연노랑 (밝게)
+        # ─ 초록 계열: 진하기로 완전 구분 ─
+        "Open World":     "#00E676",  # 밝은 민트그린
+        "Survival":       "#1B5E20",  # 매우 진한 다크그린
+        "Shooter":        "#76FF03",  # 형광 라임그린 (밝게)
+        "Tactical":       "#1A237E",  # 딥 네이비 (완전 다른 계열로 분리)
+        # ─ 파랑/하늘 계열 ─
+        "FPS":            "#00B0FF",  # 하늘파랑
+        "MOBA":           "#2979FF",  # 파랑
+        "Co-op":          "#82B1FF",  # 연파랑
+        "Sci-fi":         "#00E5FF",  # 네온 시안
+        # ─ 보라/분홍 계열 ─
+        "RPG":            "#651FFF",  # 딥 퍼플
+        "MMORPG":         "#AA00FF",  # 네온 바이올렛
+        "Strategy":       "#D500F9",  # 마젠타 퍼플
+        "Horror":         "#880E4F",  # 다크 크림즌
+        "Metroidvania":   "#E040FB",  # 라이트 퍼플
+        "Indie":          "#FF4081",  # 핫핑크
+        "Story Rich":     "#F48FB1",  # 연분홍
+        # ─ 갈색/회색 계열 ─
+        "Souls-like":     "#8D6E63",  # 브라운
+        "Turn-Based":     "#546E7A",  # 블루그레이
+        "Roguelike":      "#00897B",  # 틸 그린
+        "Platformer":     "#FFD740",  # 골드옐로
+    }
+
     def _build_genre_color_map(genre_labels: list[str]) -> dict[str, str]:
-        """황금각(137.5°) 순환 → 몇 개든 항상 최대 거리로 분산."""
+        """고정 팔레트 우선, 없는 장르만 황금각 동적 생성."""
         golden = 0.618033988749895
-        hue = 0.0
+        hue = 0.05  # 빨강과 겹치지 않게 약간 오프셋
         result = {}
-        for i, genre in enumerate(genre_labels):
-            s, v = (0.88, 0.96) if i % 2 == 0 else (0.65, 0.78)
-            r, g, b = _cs.hsv_to_rgb(hue % 1.0, s, v)
-            result[genre] = "#{:02X}{:02X}{:02X}".format(int(r*255), int(g*255), int(b*255))
-            hue += golden
+        dynamic_idx = 0
+        for genre in genre_labels:
+            if genre in _FIXED_GENRE_COLORS:
+                result[genre] = _FIXED_GENRE_COLORS[genre]
+            else:
+                # 이미 사용된 hue와 너무 가까우면 건너뜀
+                s, v = (0.85, 0.92) if dynamic_idx % 2 == 0 else (0.60, 0.70)
+                r, g, b = _cs.hsv_to_rgb(hue % 1.0, s, v)
+                result[genre] = "#{:02X}{:02X}{:02X}".format(int(r*255), int(g*255), int(b*255))
+                hue += golden
+                dynamic_idx += 1
         return result
 
-    # 파이차트 장르 + top5 게임 장르를 합쳐서 하나의 색상 맵 생성
+    # 파이 + top5 장르를 합쳐 통합 색상 맵 생성
     pie_labels: list[str] = [g for g, _ in list(genre_dist.items())[:8]] if genre_dist else []
     top5_extra: list[str] = []
     for game in top5:
