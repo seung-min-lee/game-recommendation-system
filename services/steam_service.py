@@ -155,53 +155,53 @@ class SteamService:
 
     def get_reviews(self, app_id: int, num: int = 160) -> dict:
         """
-        Steam Store 리뷰 API + 커서 페이지네이션으로 최대 num개 수집 + 한국어 번역.
-        Steam API 1회 최대 100개 → 100개 초과 시 cursor로 추가 호출.
+        Steam Store 리뷰 API + 한국어 번역.
+        helpful 100개 + recent 100개를 합쳐 중복 제거 후 최대 num개 반환.
         """
-        BATCH = 100  # Steam API 1회 최대
+        def _fetch(filter_type: str, language: str = "all", purchase_type: str = "steam") -> dict:
+            try:
+                res = requests.get(
+                    f"https://store.steampowered.com/appreviews/{app_id}",
+                    params={
+                        "json": 1,
+                        "num_per_page": 100,
+                        "language": language,
+                        "review_type": "all",
+                        "purchase_type": purchase_type,
+                        "filter": filter_type,
+                    },
+                    timeout=10,
+                )
+                return res.json()
+            except Exception:
+                return {}
 
-        def _fetch(language: str, purchase_type: str, cursor: str = "*") -> dict:
-            res = requests.get(
-                f"https://store.steampowered.com/appreviews/{app_id}",
-                params={
-                    "json": 1,
-                    "num_per_page": BATCH,
-                    "language": language,
-                    "review_type": "all",
-                    "purchase_type": purchase_type,
-                    "filter": "helpful",
-                    "cursor": cursor,
-                },
-                timeout=10,
-            )
-            return res.json()
+        # helpful 100개 + recent 100개 병렬 수집
+        with concurrent.futures.ThreadPoolExecutor(max_workers=2) as ex:
+            f1 = ex.submit(_fetch, "helpful", "all", "steam")
+            f2 = ex.submit(_fetch, "recent",  "all", "steam")
+            data1 = f1.result()
+            data2 = f2.result()
 
-        def _collect(language: str, purchase_type: str) -> tuple[dict, list]:
-            """커서 페이지네이션으로 num개까지 수집. (summary, raw_list) 반환."""
-            all_raw: list = []
-            summary: dict = {}
-            cursor = "*"
-            while len(all_raw) < num:
-                try:
-                    data = _fetch(language, purchase_type, cursor)
-                except Exception:
-                    break
-                if not summary:
-                    summary = data.get("query_summary", {})
-                batch = data.get("reviews", [])
-                if not batch:
-                    break
-                all_raw.extend(batch)
-                cursor = data.get("cursor", "")
-                if not cursor or cursor == "*":
-                    break
-            return summary, all_raw[:num]
+        summary = data1.get("query_summary") or data2.get("query_summary") or {}
 
-        # 1차: all 언어 + steam 구매
-        summary, raw_list = _collect("all", "steam")
-        # 2차: 리뷰가 없으면 english + all 구매로 재시도
+        # 중복 제거 (recommendationid 기준)
+        seen: set = set()
+        raw_list: list = []
+        for data in [data1, data2]:
+            for r in data.get("reviews", []):
+                rid = r.get("recommendationid")
+                if rid and rid not in seen:
+                    seen.add(rid)
+                    raw_list.append(r)
+
+        # 리뷰가 없으면 english/all로 재시도
         if not raw_list:
-            summary, raw_list = _collect("english", "all")
+            data_fb = _fetch("helpful", "english", "all")
+            summary = data_fb.get("query_summary", {})
+            raw_list = data_fb.get("reviews", [])
+
+        raw_list = raw_list[:num]
 
         if not raw_list:
             return {"summary": {}, "reviews": []}
