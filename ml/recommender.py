@@ -94,7 +94,7 @@ class GameRecommender:
             score = sum(genre_weight.get(g, 0) for g in info.get("genres", []))
             if score > 0:
                 # 실제 장르 가중치 비율 → 진짜 일치도
-                match_pct = min(99, max(1, int(score / max_possible * 100)))
+                match_pct = min(95, max(58, int(58 + (score / max_possible) * 37)))
                 genre_str = " · ".join(matched[:2]) if matched else top_genre
                 candidates.append({
                     "app_id": app_id,
@@ -183,7 +183,7 @@ class GameRecommender:
             if not info:
                 continue
             # 유사 유저 중 몇 %가 이 게임을 가지고 있는가 (가중치 반영)
-            match_pct = min(99, max(1, int(score / max_collab_score * 100)))
+            match_pct = min(95, max(58, int(58 + (score / max_collab_score) * 37)))
             n = game_user_count.get(app_id, 1)
             if using_real and not is_fallback:
                 reason = f"스팀 친구 {n}명이 즐겨한 게임"
@@ -230,7 +230,8 @@ class GameRecommender:
             # metacritic 87~100 구간을 0~100%로 정규화
             genre_pct  = genre_overlap / len(top_genres) * 100
             quality_pct = max(0.0, (metacritic - 87) / 13 * 100)
-            match_pct  = min(99, max(1, int(genre_pct * 0.6 + quality_pct * 0.4)))
+            raw = (genre_pct * 0.6 + quality_pct * 0.4) / 100  # 0.0 ~ 1.0
+            match_pct  = min(95, max(58, int(58 + raw * 37)))
             common = sorted(top_genres & game_genres)
             genre_str = " · ".join(common[:2]) if common else ""
             price_str = "무료" if info.get("price", 0) == 0 else f"₩{info['price']:,}"
@@ -294,7 +295,7 @@ class GameRecommender:
             relative_pct = (score - min_score) / score_range  # 0.0 ~ 1.0
             absolute_pct = min(1.0, max(0.0, score / (max_score or 1.0)))  # 절대 강도
             combined = relative_pct * 0.5 + absolute_pct * 0.5
-            match_pct  = min(95, max(20, int(combined * 95)))
+            match_pct  = min(95, max(58, int(58 + combined * 37)))
             genre_str = " · ".join(info.get("genres", [])[:2])
             n_users = len(extra_users) + len(DUMMY_OWNED_GAMES)
             reason = f"GNN이 {n_users}명 플레이 그래프에서 분석 · {genre_str}"
