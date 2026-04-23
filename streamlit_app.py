@@ -757,7 +757,7 @@ def _render_friends_sidebar():
 
 # ── 페이지: 로그인 ────────────────────────────────────────────────────────────
 def page_login():
-    _, col, _ = st.columns([1, 1.4, 1])
+    _, col, _ = st.columns([1, 2, 1])
     with col:
         st.markdown("""
         <div style="background:rgba(0,0,0,0.75);border-radius:8px;padding:40px 40px 30px;margin-top:60px;text-align:center;">
@@ -775,17 +775,9 @@ def page_login():
                                   label_visibility="collapsed")
 
         st.markdown("<div style='height:8px'></div>", unsafe_allow_html=True)
-        st.markdown("""
-        <style>
-        div[data-testid="stButton"]:has(button[kind="primary"]) {
-            display: flex; justify-content: center;
-        }
-        div[data-testid="stButton"]:has(button[kind="primary"]) button {
-            width: 50% !important;
-        }
-        </style>
-        """, unsafe_allow_html=True)
-        login_clicked = st.button("시작하기", key="login_btn", type="primary")
+        _, btn_col, _ = st.columns([1, 2, 1])
+        with btn_col:
+            login_clicked = st.button("시작하기", key="login_btn")
 
         st.markdown("""
         <div style="display:flex;align-items:center;color:#737373;font-size:0.9rem;margin:22px 0 14px;">
