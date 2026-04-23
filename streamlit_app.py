@@ -802,7 +802,7 @@ def page_login():
                 🔗 Steam 로그인 페이지에서 확인하기
             </a>
         </div>
-        <p style="color:#555;font-size:0.75rem;text-align:center;margin:0;">
+        <p style="color:#b3b3b3;font-size:0.75rem;text-align:center;margin:0;">
             로그인 후 우측 상단 프로필 → 프로필 보기 → URL의 숫자가 Steam ID입니다.
         </p>
         """, unsafe_allow_html=True)
@@ -837,7 +837,7 @@ def page_login():
             st.rerun()
 
     st.markdown("""
-    <div style="text-align:center;color:#737373;font-size:0.8rem;margin-top:40px;">
+    <div style="text-align:center;color:#ffffff;font-size:0.8rem;margin-top:40px;">
         Powered by Steam API &nbsp;·&nbsp; Not affiliated with Valve Corporation.
     </div>
     """, unsafe_allow_html=True)
