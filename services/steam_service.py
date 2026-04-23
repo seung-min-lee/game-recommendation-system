@@ -18,70 +18,59 @@ def _get_api_key() -> str:
 class SteamService:
 
     def get_user_summary(self, steam_id: str) -> dict | None:
-        if _get_api_key():
-            try:
-                url = "https://api.steampowered.com/ISteamUser/GetPlayerSummaries/v2/"
-                res = requests.get(url, params={"key": _get_api_key(), "steamids": steam_id}, timeout=5)
-                players = res.json().get("response", {}).get("players", [])
-                if players:
-                    p = players[0]
-                    return {
-                        "steam_id": steam_id,
-                        "username": p.get("personaname", f"User_{steam_id[-6:]}"),
-                        "avatar_url": p.get("avatarfull", ""),
-                    }
-            except Exception:
-                pass
-
-        return {
-            "steam_id": steam_id,
-            "username": f"User_{steam_id[-6:]}",
-            "avatar_url": "",
-        }
+        """실제 Steam API로만 조회. 존재하지 않는 ID면 None 반환."""
+        key = _get_api_key()
+        if not key:
+            return None
+        try:
+            url = "https://api.steampowered.com/ISteamUser/GetPlayerSummaries/v2/"
+            res = requests.get(url, params={"key": key, "steamids": steam_id}, timeout=5)
+            players = res.json().get("response", {}).get("players", [])
+            if not players:
+                return None
+            p = players[0]
+            return {
+                "steam_id": steam_id,
+                "username": p.get("personaname", f"User_{steam_id[-6:]}"),
+                "avatar_url": p.get("avatarfull", ""),
+            }
+        except Exception:
+            return None
 
     def get_owned_games(self, steam_id: str) -> list[dict]:
-        if _get_api_key():
-            try:
-                url = "https://api.steampowered.com/IPlayerService/GetOwnedGames/v1/"
-                res = requests.get(url, params={
-                    "key": _get_api_key(),
-                    "steamid": steam_id,
-                    "include_appinfo": True,
-                    "include_played_free_games": True,
-                }, timeout=5)
-                games = res.json().get("response", {}).get("games", [])
-                if games:
-                    result = []
-                    for g in games:
-                        app_id = g.get("appid")
-                        catalog = GAME_CATALOG.get(app_id, {})
-                        result.append({
-                            "app_id": app_id,
-                            "name": g.get("name", catalog.get("name", f"Game_{app_id}")),
-                            "playtime_minutes": g.get("playtime_forever", 0),
-                            "genres": catalog.get("genres", []),
-                            "header_image": catalog.get(
-                                "header_image",
-                                f"https://cdn.akamai.steamstatic.com/steam/apps/{app_id}/header.jpg",
-                            ),
-                            "store_url": catalog.get("store_url", f"https://store.steampowered.com/app/{app_id}"),
-                        })
-                    return result
-            except Exception:
-                pass
-
-        source = DUMMY_OWNED_GAMES.get(steam_id) or DUMMY_OWNED_GAMES[next(iter(DUMMY_OWNED_GAMES))]
-        result = []
-        for g in source:
-            app_id = g["app_id"]
-            catalog = GAME_CATALOG.get(app_id, {})
-            result.append({
-                **g,
-                "genres": catalog.get("genres", g.get("genres", [])),
-                "header_image": catalog.get("header_image", g.get("header_image", "")),
-                "store_url": catalog.get("store_url", g.get("store_url", "")),
-            })
-        return result
+        """실제 Steam API로만 조회. API 키 없거나 유저 미존재 시 빈 리스트 반환."""
+        key = _get_api_key()
+        if not key:
+            return []
+        try:
+            url = "https://api.steampowered.com/IPlayerService/GetOwnedGames/v1/"
+            res = requests.get(url, params={
+                "key": key,
+                "steamid": steam_id,
+                "include_appinfo": True,
+                "include_played_free_games": True,
+            }, timeout=5)
+            games = res.json().get("response", {}).get("games", [])
+            if not games:
+                return []
+            result = []
+            for g in games:
+                app_id = g.get("appid")
+                catalog = GAME_CATALOG.get(app_id, {})
+                result.append({
+                    "app_id": app_id,
+                    "name": g.get("name", catalog.get("name", f"Game_{app_id}")),
+                    "playtime_minutes": g.get("playtime_forever", 0),
+                    "genres": catalog.get("genres", []),
+                    "header_image": catalog.get(
+                        "header_image",
+                        f"https://cdn.akamai.steamstatic.com/steam/apps/{app_id}/header.jpg",
+                    ),
+                    "store_url": catalog.get("store_url", f"https://store.steampowered.com/app/{app_id}"),
+                })
+            return result
+        except Exception:
+            return []
 
     def get_friend_list(self, steam_id: str) -> list[str]:
         """공개 친구 목록 반환. 비공개면 빈 리스트."""

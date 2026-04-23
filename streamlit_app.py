@@ -795,11 +795,17 @@ def page_login():
                 st.error("스팀 ID를 입력해주세요.")
                 return
             sid = steam_id.strip()
+            if not sid.isdigit() or len(sid) != 17:
+                st.error("올바른 Steam ID 형식이 아닙니다. 17자리 숫자로 입력해주세요. (예: 76561198000000001)")
+                return
             with st.spinner("게임 데이터 불러오는 중..."):
-                user  = steam.get_user_summary(sid)
+                user = steam.get_user_summary(sid)
+                if user is None:
+                    st.error("존재하지 않는 Steam ID입니다. ID를 다시 확인해주세요.")
+                    return
                 owned = steam.get_owned_games(sid)
                 if not owned:
-                    st.error("게임 데이터를 찾을 수 없습니다.")
+                    st.error("해당 계정의 게임 목록을 가져올 수 없습니다. 게임 목록이 비공개이거나 보유 게임이 없습니다.")
                     return
                 stats = recommender.compute_stats(owned)
 
