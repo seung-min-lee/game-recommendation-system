@@ -153,50 +153,65 @@ class SteamService:
                 pass
         return result
 
-    def get_reviews(self, app_id: int, num: int = 100) -> dict:
+    def get_reviews(self, app_id: int, num: int = 160) -> dict:
         """
-        Steam Store 리뷰 API + 한국어 자동 번역.
-        'all' 언어 조회 실패 시 영어 전용으로 재시도.
+        Steam Store 리뷰 API + 커서 페이지네이션으로 최대 num개 수집 + 한국어 번역.
+        Steam API 1회 최대 100개 → 100개 초과 시 cursor로 추가 호출.
         """
-        def _fetch(language: str, purchase_type: str) -> dict:
+        BATCH = 100  # Steam API 1회 최대
+
+        def _fetch(language: str, purchase_type: str, cursor: str = "*") -> dict:
             res = requests.get(
                 f"https://store.steampowered.com/appreviews/{app_id}",
                 params={
                     "json": 1,
-                    "num_per_page": num,
+                    "num_per_page": BATCH,
                     "language": language,
                     "review_type": "all",
                     "purchase_type": purchase_type,
                     "filter": "helpful",
+                    "cursor": cursor,
                 },
                 timeout=10,
             )
             return res.json()
 
-        data: dict = {}
+        def _collect(language: str, purchase_type: str) -> tuple[dict, list]:
+            """커서 페이지네이션으로 num개까지 수집. (summary, raw_list) 반환."""
+            all_raw: list = []
+            summary: dict = {}
+            cursor = "*"
+            while len(all_raw) < num:
+                try:
+                    data = _fetch(language, purchase_type, cursor)
+                except Exception:
+                    break
+                if not summary:
+                    summary = data.get("query_summary", {})
+                batch = data.get("reviews", [])
+                if not batch:
+                    break
+                all_raw.extend(batch)
+                cursor = data.get("cursor", "")
+                if not cursor or cursor == "*":
+                    break
+            return summary, all_raw[:num]
+
         # 1차: all 언어 + steam 구매
-        try:
-            data = _fetch("all", "steam")
-        except Exception:
-            pass
+        summary, raw_list = _collect("all", "steam")
+        # 2차: 리뷰가 없으면 english + all 구매로 재시도
+        if not raw_list:
+            summary, raw_list = _collect("english", "all")
 
-        # 2차: 리뷰가 비었으면 english + all 구매로 재시도
-        if not data.get("reviews"):
-            try:
-                data = _fetch("english", "all")
-            except Exception:
-                pass
-
-        if not data:
+        if not raw_list:
             return {"summary": {}, "reviews": []}
 
-        qs       = data.get("query_summary", {})
-        total    = qs.get("total_reviews", 0)
-        positive = qs.get("total_positive", 0)
+        total    = summary.get("total_reviews", 0)
+        positive = summary.get("total_positive", 0)
         pct      = round(positive / total * 100) if total > 0 else 0
 
         raw_reviews = []
-        for r in data.get("reviews", [])[:num]:
+        for r in raw_list:
             text = r.get("review", "").strip().replace("\n", " ")
             if not text:
                 continue
@@ -214,7 +229,7 @@ class SteamService:
             "summary": {
                 "total": total,
                 "positive_pct": pct,
-                "score_desc": qs.get("review_score_desc", ""),
+                "score_desc": summary.get("review_score_desc", ""),
             },
             "reviews": reviews,
         }
