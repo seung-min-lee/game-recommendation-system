@@ -264,14 +264,59 @@ def _show_reviews_panel(games: list, key_prefix: str):
         )
         return
 
-    # ── 페이지네이션 ──────────────────────────────────────────────────────────
-    total_pages = max(1, (len(all_reviews) + PER_PAGE - 1) // PER_PAGE)
-    page_key    = f"_rv_pg_{key_prefix}_{app_id}"
-    if page_key not in st.session_state:
-        st.session_state[page_key] = 0
+    # ── 정렬 + 페이지네이션 ───────────────────────────────────────────────────
+    sort_col, _, page_col = st.columns([1, 2, 3])
 
-    cur_page    = min(st.session_state[page_key], total_pages - 1)
-    page_reviews = all_reviews[cur_page * PER_PAGE:(cur_page + 1) * PER_PAGE]
+    with sort_col:
+        st.markdown(
+            '<p style="color:#b3b3b3;font-size:0.78rem;margin:6px 0 4px;">정렬</p>',
+            unsafe_allow_html=True,
+        )
+        sort_key = f"_rv_sort_{key_prefix}_{app_id}"
+        sort_opt = st.radio(
+            "",
+            options=["👍 긍정 먼저", "👎 부정 먼저", "⏱ 플레이타임 많은 순", "⏱ 플레이타임 적은 순"],
+            key=sort_key,
+            label_visibility="collapsed",
+        )
+
+    # 정렬 적용
+    if sort_opt == "👍 긍정 먼저":
+        sorted_reviews = sorted(all_reviews, key=lambda r: (not r["voted_up"], -r.get("playtime_hours", 0)))
+    elif sort_opt == "👎 부정 먼저":
+        sorted_reviews = sorted(all_reviews, key=lambda r: (r["voted_up"], -r.get("playtime_hours", 0)))
+    elif sort_opt == "⏱ 플레이타임 많은 순":
+        sorted_reviews = sorted(all_reviews, key=lambda r: -r.get("playtime_hours", 0))
+    else:
+        sorted_reviews = sorted(all_reviews, key=lambda r: r.get("playtime_hours", 0))
+
+    with page_col:
+        total_pages = max(1, (len(sorted_reviews) + PER_PAGE - 1) // PER_PAGE)
+        page_key    = f"_rv_pg_{key_prefix}_{app_id}"
+        if page_key not in st.session_state:
+            st.session_state[page_key] = 0
+        cur_page = min(st.session_state[page_key], total_pages - 1)
+
+        if total_pages > 1:
+            st.markdown(
+                f'<p style="color:#737373;font-size:0.75rem;margin:6px 0 2px;">'
+                f'총 {len(sorted_reviews)}개 리뷰 · 페이지당 {PER_PAGE}개</p>',
+                unsafe_allow_html=True,
+            )
+            chosen = st.radio(
+                "",
+                options=list(range(1, min(total_pages, 10) + 1)),
+                index=cur_page,
+                horizontal=True,
+                key=f"rv_radio_{key_prefix}_{app_id}",
+                label_visibility="collapsed",
+                format_func=lambda p: f"{p}",
+            )
+            if chosen - 1 != cur_page:
+                st.session_state[page_key] = chosen - 1
+                st.rerun()
+
+    page_reviews = sorted_reviews[cur_page * PER_PAGE:(cur_page + 1) * PER_PAGE]
 
     # ── 리뷰 카드 그리드 — components.html (고정 높이 + 하단 화살표 접기/펼치기) ──
     CARD_H     = 170   # 카드 콘텐츠 영역 고정 높이(px)
@@ -405,26 +450,6 @@ def _show_reviews_panel(games: list, key_prefix: str):
         scrolling=False,
     )
 
-    # ── 페이지 네비게이션 (st.radio — 버튼보다 1.4배 작음) ──────────────────
-    if total_pages > 1:
-        st.markdown(
-            f'<p style="color:#737373;font-size:0.75rem;margin:10px 0 2px;">'
-            f'총 {len(all_reviews)}개 리뷰 · 페이지당 {PER_PAGE}개</p>',
-            unsafe_allow_html=True,
-        )
-        # radio는 버튼 대비 자연스럽게 소형 렌더링
-        chosen = st.radio(
-            "",
-            options=list(range(1, min(total_pages, 10) + 1)),
-            index=cur_page,
-            horizontal=True,
-            key=f"rv_radio_{key_prefix}_{app_id}",
-            label_visibility="collapsed",
-            format_func=lambda p: f"{p}",
-        )
-        if chosen - 1 != cur_page:
-            st.session_state[page_key] = chosen - 1
-            st.rerun()
 
 
 def _price_badge_html(pi: dict | None, next_sale_name: str, next_sale_dday: int) -> str:
