@@ -274,10 +274,24 @@ def _show_reviews_panel(games: list, key_prefix: str):
     page_reviews = all_reviews[cur_page * PER_PAGE:(cur_page + 1) * PER_PAGE]
 
     # ── 리뷰 카드 그리드 — components.html (고정 높이 + 하단 화살표 접기/펼치기) ──
-    CARD_H      = 170   # 카드 콘텐츠 영역 고정 높이(px)
-    cards_html  = "".join(_review_card_html(r, i) for i, r in enumerate(page_reviews))
-    row_count   = (len(page_reviews) + 2) // 3
-    base_height = row_count * (CARD_H + 60) + 30   # 카드 + 헤더 + gap + 여백
+    CARD_H     = 170   # 카드 콘텐츠 영역 고정 높이(px)
+    OVERHEAD   = 95    # 헤더 + 버튼 + 패딩 합계(px)
+    CPL        = 44    # 카드 너비 기준 한 줄당 글자 수 근사치
+    LINE_H     = 22    # 한 줄 높이(px)
+
+    def _expanded_h(r: dict) -> int:
+        lines = max(1, -(-len(r.get("text") or "") // CPL))  # ceiling division
+        return max(CARD_H, lines * LINE_H) + OVERHEAD
+
+    # 행마다 가장 긴 카드 높이로 계산 (전부 펼쳐졌을 때 기준)
+    total_height = 30  # 상하 패딩
+    for i in range(0, len(page_reviews), 3):
+        row = page_reviews[i:i + 3]
+        total_height += max(_expanded_h(r) for r in row) + 14  # gap
+
+    cards_html = "".join(_review_card_html(r, i) for i, r in enumerate(page_reviews))
+    row_count  = (len(page_reviews) + 2) // 3
+    base_height = total_height
     components.html(
         f"""<!DOCTYPE html>
 <html><head><meta charset="utf-8">
@@ -388,7 +402,7 @@ def _show_reviews_panel(games: list, key_prefix: str):
 </script>
 </body></html>""",
         height=base_height,
-        scrolling=True,
+        scrolling=False,
     )
 
     # ── 페이지 네비게이션 (st.radio — 버튼보다 1.4배 작음) ──────────────────

@@ -211,8 +211,8 @@ class SteamService:
             text = r.get("review", "").strip().replace("\n", " ")
             if not text:
                 continue
-            if len(text) > 500:
-                text = text[:500] + "..."
+            if len(text) > 2000:
+                text = text[:2000] + "..."
             raw_reviews.append({
                 "text": text,
                 "voted_up": r.get("voted_up", True),
