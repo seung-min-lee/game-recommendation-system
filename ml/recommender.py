@@ -82,6 +82,9 @@ class GameRecommender:
             for genre in game.get("genres", []):
                 genre_weight[genre] += weight
 
+        # 이론적 최대 점수 = 모든 장르 가중치 합 (게임 한 개가 모든 장르를 커버할 때)
+        max_possible = sum(genre_weight.values()) or 1.0
+
         top_genre = max(genre_weight, key=genre_weight.get) if genre_weight else ""
         candidates = []
         for app_id, info in GAME_CATALOG.items():
@@ -90,7 +93,8 @@ class GameRecommender:
             matched = [g for g in info.get("genres", []) if genre_weight.get(g, 0) > 0]
             score = sum(genre_weight.get(g, 0) for g in info.get("genres", []))
             if score > 0:
-                match_pct = self._to_match_percent(score, max_score=1.5)
+                # 실제 장르 가중치 비율 → 진짜 일치도
+                match_pct = min(99, max(1, int(score / max_possible * 100)))
                 genre_str = " · ".join(matched[:2]) if matched else top_genre
                 candidates.append({
                     "app_id": app_id,
@@ -169,13 +173,17 @@ class GameRecommender:
             for _, _, og in top_sims
         )
 
+        # 유사 유저 전체 유사도 합 = 이 게임을 모든 유사 유저가 가졌을 때의 최대 점수
+        max_collab_score = sum(sim for _, sim, _ in top_sims) or 1.0
+
         # ── 카드 변환: GAME_CATALOG 우선, 없으면 Steam API ───────────────────
         candidates = []
         for app_id, score in sorted(rec_scores.items(), key=lambda x: x[1], reverse=True)[:20]:
             info = GAME_CATALOG.get(app_id) or self._fetch_game_info(app_id)
             if not info:
                 continue
-            match_pct = self._to_match_percent(score, max_score=3.0)
+            # 유사 유저 중 몇 %가 이 게임을 가지고 있는가 (가중치 반영)
+            match_pct = min(99, max(1, int(score / max_collab_score * 100)))
             n = game_user_count.get(app_id, 1)
             if using_real and not is_fallback:
                 reason = f"스팀 친구 {n}명이 즐겨한 게임"
@@ -218,7 +226,11 @@ class GameRecommender:
                 continue
             price_bonus = 0.3 if info.get("price", 99999) == 0 else 0
             score = genre_overlap * (metacritic / 100) + price_bonus
-            match_pct = self._to_match_percent(score, max_score=3.0)
+            # 장르 일치율 (내 상위 3장르 중 몇 개 겹치는가) 60% + 품질 점수 40%
+            # metacritic 87~100 구간을 0~100%로 정규화
+            genre_pct  = genre_overlap / len(top_genres) * 100
+            quality_pct = max(0.0, (metacritic - 87) / 13 * 100)
+            match_pct  = min(99, max(1, int(genre_pct * 0.6 + quality_pct * 0.4)))
             common = sorted(top_genres & game_genres)
             genre_str = " · ".join(common[:2]) if common else ""
             price_str = "무료" if info.get("price", 0) == 0 else f"₩{info['price']:,}"
@@ -277,7 +289,12 @@ class GameRecommender:
             info = GAME_CATALOG.get(app_id) or self._fetch_game_info(app_id)
             if not info:
                 continue
-            match_pct = int(60 + ((score - min_score) / score_range) * 39)
+            # GNN 임베딩 내적값: 결과 내 상대 순위 반영
+            # 1위 → 최대 95%, 꼴찌 → max_score 대비 절대값 기반 하한
+            relative_pct = (score - min_score) / score_range  # 0.0 ~ 1.0
+            absolute_pct = min(1.0, max(0.0, score / (max_score or 1.0)))  # 절대 강도
+            combined = relative_pct * 0.5 + absolute_pct * 0.5
+            match_pct  = min(95, max(20, int(combined * 95)))
             genre_str = " · ".join(info.get("genres", [])[:2])
             n_users = len(extra_users) + len(DUMMY_OWNED_GAMES)
             reason = f"GNN이 {n_users}명 플레이 그래프에서 분석 · {genre_str}"
@@ -321,11 +338,6 @@ class GameRecommender:
         if not set_a or not set_b:
             return 0.0
         return len(set_a & set_b) / len(set_a | set_b)
-
-    @staticmethod
-    def _to_match_percent(score: float, max_score: float = 1.0) -> int:
-        ratio = min(score / max_score, 1.0)
-        return int(60 + ratio * 39)
 
     @staticmethod
     def _clean_cards(cards: list[dict]) -> list[dict]:
