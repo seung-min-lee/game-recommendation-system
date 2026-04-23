@@ -145,12 +145,31 @@ class SteamService:
                     result[fid] = games
         return result
 
-    def get_reviews(self, app_id: int, num: int = 6) -> dict:
+    def get_friends_profiles(self, friend_ids: list[str]) -> dict[str, dict]:
+        """최대 100명까지 한 번에 프로필 배치 fetch."""
+        if not friend_ids or not _get_api_key():
+            return {}
+        result: dict[str, dict] = {}
+        for i in range(0, len(friend_ids), 100):
+            chunk = friend_ids[i:i + 100]
+            try:
+                url = "https://api.steampowered.com/ISteamUser/GetPlayerSummaries/v2/"
+                res = requests.get(url, params={"key": _get_api_key(), "steamids": ",".join(chunk)}, timeout=5)
+                for p in res.json().get("response", {}).get("players", []):
+                    result[p["steamid"]] = {
+                        "username": p.get("personaname", f"User_{p['steamid'][-4:]}"),
+                        "avatar_url": p.get("avatarfull", ""),
+                    }
+            except Exception:
+                pass
+        return result
+
+    def get_reviews(self, app_id: int, num: int = 100) -> dict:
         """
-        Steam Store 리뷰 API.
+        Steam Store 리뷰 API + 한국어 자동 번역.
         반환: {
           "summary": {"total", "positive_pct", "score_desc"},
-          "reviews": [{"text", "voted_up", "playtime_hours", "language"}]
+          "reviews": [{"text", "voted_up", "playtime_hours"}]
         }
         """
         try:
@@ -164,21 +183,26 @@ class SteamService:
                 "filter": "helpful",
             }, timeout=6)
             data = res.json()
-            qs = data.get("query_summary", {})
+            qs       = data.get("query_summary", {})
             total    = qs.get("total_reviews", 0)
             positive = qs.get("total_positive", 0)
             pct      = round(positive / total * 100) if total > 0 else 0
-            reviews  = []
+
+            raw_reviews = []
             for r in data.get("reviews", [])[:num]:
                 text = r.get("review", "").strip().replace("\n", " ")
-                if len(text) > 220:
-                    text = text[:220] + "..."
-                reviews.append({
+                if len(text) > 300:
+                    text = text[:300] + "..."
+                raw_reviews.append({
                     "text": text,
                     "voted_up": r.get("voted_up", True),
                     "playtime_hours": round(r.get("author", {}).get("playtime_forever", 0) / 60, 1),
                     "language": r.get("language", ""),
                 })
+
+            # 병렬 번역 (이미 한국어면 skip)
+            reviews = self._translate_reviews(raw_reviews)
+
             return {
                 "summary": {
                     "total": total,
@@ -189,6 +213,37 @@ class SteamService:
             }
         except Exception:
             return {"summary": {}, "reviews": []}
+
+    @staticmethod
+    def _is_korean(text: str) -> bool:
+        return sum(1 for c in text if '가' <= c <= '힣') > len(text) * 0.15
+
+    def _translate_reviews(self, reviews: list[dict]) -> list[dict]:
+        """한국어가 아닌 리뷰를 병렬로 번역."""
+        needs = [(i, r) for i, r in enumerate(reviews) if r["text"] and not self._is_korean(r["text"])]
+        if not needs:
+            return reviews
+
+        translated = list(reviews)
+
+        def _do(item):
+            idx, r = item
+            try:
+                from deep_translator import GoogleTranslator
+                t = GoogleTranslator(source="auto", target="ko").translate(r["text"])
+                return idx, t or r["text"]
+            except Exception:
+                return idx, r["text"]
+
+        with concurrent.futures.ThreadPoolExecutor(max_workers=6) as ex:
+            done, _ = concurrent.futures.wait(
+                [ex.submit(_do, item) for item in needs], timeout=10
+            )
+            for fut in done:
+                idx, text = fut.result()
+                translated[idx] = {**translated[idx], "text": text}
+
+        return translated
 
     def get_game_detail(self, app_id: int) -> dict | None:
         info = GAME_CATALOG.get(app_id)

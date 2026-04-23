@@ -101,7 +101,8 @@ for key, default in [
     ("stats", None),
     ("recs", None),
     ("owned_games", []),
-    ("friends_games", {}),   # {friend_id: [games]} — 실제 스팀 친구 데이터
+    ("friends_games", {}),
+    ("friends_profiles", {}),
     ("friends_count", 0),
 ]:
     if key not in st.session_state:
@@ -145,19 +146,36 @@ def _render_carousel(games: list):
     components.html(html, height=360, scrolling=False)
 
 
+def _review_card_html(r: dict) -> str:
+    """리뷰 하나를 완전한 HTML 카드로 변환 (unclosed tag 없음)."""
+    icon  = "👍" if r["voted_up"] else "👎"
+    color = "#46d369" if r["voted_up"] else "#E50914"
+    pt    = r.get("playtime_hours", 0)
+    text  = (r.get("text") or "(리뷰 내용 없음)").replace("<", "&lt;").replace(">", "&gt;")
+    return (
+        f'<div style="background:#202020;border-radius:8px;padding:14px;'
+        f'border-top:2px solid {color};min-height:100px;">'
+        f'<div style="color:{color};font-weight:bold;margin-bottom:8px;font-size:0.82rem;">'
+        f'{icon} &nbsp;플레이 {pt}시간</div>'
+        f'<p style="color:#d0d0d0;font-size:0.81rem;line-height:1.55;margin:0;">{text}</p>'
+        f'</div>'
+    )
+
+
 def _show_reviews_panel(games: list, key_prefix: str):
-    """캐러셀 아래에 게임 선택 → Steam 리뷰 패널 표시."""
+    """캐러셀 아래 — 게임 선택 → Steam 리뷰(한국어 번역) + 페이지네이션."""
     if not games:
         return
 
-    names = [g.get("name", "Unknown") for g in games]
+    PER_PAGE = 10
+
+    names    = [g.get("name", "Unknown") for g in games]
     selected = st.selectbox(
-        "리뷰 보기",
+        "",
         options=["🔍 게임을 선택하면 Steam 리뷰를 표시합니다"] + names,
         key=f"review_sel_{key_prefix}",
         label_visibility="collapsed",
     )
-
     if selected.startswith("🔍"):
         return
 
@@ -165,91 +183,94 @@ def _show_reviews_panel(games: list, key_prefix: str):
     if not game:
         return
 
-    app_id = game["app_id"]
+    app_id    = game["app_id"]
     cache_key = f"_rv_{app_id}"
+
     if cache_key not in st.session_state:
-        with st.spinner("Steam 리뷰 불러오는 중..."):
-            st.session_state[cache_key] = steam.get_reviews(app_id)
+        with st.spinner("Steam 리뷰 불러오는 중 (한국어 번역 포함)..."):
+            st.session_state[cache_key] = steam.get_reviews(app_id, num=100)
 
-    rv      = st.session_state[cache_key]
-    summary = rv.get("summary", {})
-    reviews = rv.get("reviews", [])
+    rv          = st.session_state[cache_key]
+    summary     = rv.get("summary", {})
+    all_reviews = rv.get("reviews", [])
 
-    total   = summary.get("total", 0)
-    pct     = summary.get("positive_pct", 0)
-    desc    = summary.get("score_desc", "")
-    mc      = game.get("metacritic") or 0
+    total = summary.get("total", 0)
+    pct   = summary.get("positive_pct", 0)
+    desc  = summary.get("score_desc", "")
+    mc    = game.get("metacritic") or 0
 
-    # 평점 색상
-    if pct >= 85:
-        pct_color = "#46d369"
-    elif pct >= 60:
-        pct_color = "#f5c518"
-    else:
-        pct_color = "#E50914"
+    pct_color = "#46d369" if pct >= 85 else ("#f5c518" if pct >= 60 else "#E50914")
 
     mc_badge = (
         f'<span style="background:#1a1a2e;color:#7986cb;border:1px solid #7986cb;'
-        f'border-radius:4px;padding:2px 8px;font-size:0.8rem;font-weight:bold;margin-left:10px;">'
+        f'border-radius:4px;padding:2px 8px;font-size:0.8rem;font-weight:bold;">'
         f'Metacritic {mc}</span>'
     ) if mc else ""
 
-    st.markdown(f"""
-    <div style="background:#181818;border-radius:10px;padding:20px 24px;margin-top:4px;
-                border-left:4px solid {pct_color};">
-        <div style="display:flex;align-items:center;gap:12px;margin-bottom:16px;flex-wrap:wrap;">
-            <span style="font-size:1.1rem;font-weight:bold;color:#fff;">{selected}</span>
-            <span style="background:{pct_color};color:#000;border-radius:4px;
-                         padding:3px 10px;font-size:0.85rem;font-weight:bold;">{desc}</span>
-            <span style="color:{pct_color};font-weight:bold;font-size:0.95rem;">
-                👍 {pct}%
-            </span>
-            <span style="color:#737373;font-size:0.82rem;">전체 리뷰 {total:,}개</span>
-            {mc_badge}
-        </div>
-    """, unsafe_allow_html=True)
+    # ── 요약 헤더 (완전한 HTML — unclosed div 없음) ───────────────────────────
+    st.markdown(
+        f'<div style="background:#181818;border-radius:10px;padding:16px 22px;'
+        f'margin-top:4px;border-left:4px solid {pct_color};">'
+        f'<div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap;">'
+        f'<span style="font-size:1.05rem;font-weight:bold;color:#fff;">{selected}</span>'
+        f'<span style="background:{pct_color};color:#000;border-radius:4px;'
+        f'padding:2px 9px;font-size:0.82rem;font-weight:bold;">{desc}</span>'
+        f'<span style="color:{pct_color};font-weight:bold;">👍 {pct}%</span>'
+        f'<span style="color:#737373;font-size:0.8rem;">전체 리뷰 {total:,}개</span>'
+        f'{mc_badge}'
+        f'</div></div>',
+        unsafe_allow_html=True,
+    )
 
-    if reviews:
-        cols = st.columns(min(len(reviews), 3))
-        for i, r in enumerate(reviews[:3]):
-            icon  = "👍" if r["voted_up"] else "👎"
-            color = "#46d369" if r["voted_up"] else "#E50914"
-            pt    = r["playtime_hours"]
-            text  = r["text"] or "(리뷰 내용 없음)"
-            with cols[i]:
-                st.markdown(f"""
-                <div style="background:#202020;border-radius:8px;padding:14px;height:100%;
-                             border-top:2px solid {color};">
-                    <div style="color:{color};font-weight:bold;margin-bottom:8px;">
-                        {icon} &nbsp;플레이 {pt}시간
-                    </div>
-                    <p style="color:#d0d0d0;font-size:0.82rem;line-height:1.5;margin:0;">{text}</p>
-                </div>
-                """, unsafe_allow_html=True)
-        if len(reviews) > 3:
-            st.markdown("<div style='margin-top:12px;'>", unsafe_allow_html=True)
-            cols2 = st.columns(len(reviews) - 3)
-            for i, r in enumerate(reviews[3:]):
-                icon  = "👍" if r["voted_up"] else "👎"
-                color = "#46d369" if r["voted_up"] else "#E50914"
-                pt    = r["playtime_hours"]
-                text  = r["text"] or "(리뷰 내용 없음)"
-                with cols2[i]:
-                    st.markdown(f"""
-                    <div style="background:#202020;border-radius:8px;padding:14px;height:100%;
-                                 border-top:2px solid {color};">
-                        <div style="color:{color};font-weight:bold;margin-bottom:8px;">
-                            {icon} &nbsp;플레이 {pt}시간
-                        </div>
-                        <p style="color:#d0d0d0;font-size:0.82rem;line-height:1.5;margin:0;">{text}</p>
-                    </div>
-                    """, unsafe_allow_html=True)
-            st.markdown("</div>", unsafe_allow_html=True)
-    else:
-        st.markdown('<p style="color:#737373;font-size:0.85rem;">리뷰 데이터를 가져올 수 없습니다.</p>',
+    if not all_reviews:
+        st.markdown('<p style="color:#737373;font-size:0.85rem;margin-top:8px;">리뷰 데이터를 가져올 수 없습니다.</p>',
                     unsafe_allow_html=True)
+        return
 
+    # ── 페이지네이션 ──────────────────────────────────────────────────────────
+    total_pages = max(1, (len(all_reviews) + PER_PAGE - 1) // PER_PAGE)
+    page_key    = f"_rv_pg_{key_prefix}_{app_id}"
+    if page_key not in st.session_state:
+        st.session_state[page_key] = 0
+
+    cur_page    = min(st.session_state[page_key], total_pages - 1)
+    page_reviews = all_reviews[cur_page * PER_PAGE:(cur_page + 1) * PER_PAGE]
+
+    # ── 리뷰 카드 그리드 (3열) — 각 카드는 완전한 HTML ──────────────────────
+    st.markdown("<div style='margin-top:12px;'>", unsafe_allow_html=True)
+    for row_start in range(0, len(page_reviews), 3):
+        row = page_reviews[row_start:row_start + 3]
+        cols = st.columns(3)
+        for i, r in enumerate(row):
+            with cols[i]:
+                st.markdown(_review_card_html(r), unsafe_allow_html=True)
+        st.markdown("<div style='height:10px'></div>", unsafe_allow_html=True)
     st.markdown("</div>", unsafe_allow_html=True)
+
+    # ── 페이지 번호 버튼 ─────────────────────────────────────────────────────
+    if total_pages > 1:
+        st.markdown(
+            f'<p style="color:#737373;font-size:0.78rem;text-align:center;margin:6px 0 4px;">'
+            f'페이지 {cur_page + 1} / {total_pages} &nbsp;(총 {len(all_reviews)}개 리뷰)</p>',
+            unsafe_allow_html=True,
+        )
+        # 최대 10개 페이지 버튼 + 이전/다음
+        visible = list(range(total_pages))[:10]
+        nav_cols = st.columns(len(visible) + 2)
+
+        if nav_cols[0].button("◀", key=f"rv_prev_{key_prefix}_{app_id}", disabled=cur_page == 0):
+            st.session_state[page_key] = cur_page - 1
+            st.rerun()
+
+        for idx, p in enumerate(visible):
+            label = f"**{p+1}**" if p == cur_page else str(p + 1)
+            if nav_cols[idx + 1].button(label, key=f"rv_p{p}_{key_prefix}_{app_id}"):
+                st.session_state[page_key] = p
+                st.rerun()
+
+        if nav_cols[-1].button("▶", key=f"rv_next_{key_prefix}_{app_id}", disabled=cur_page >= total_pages - 1):
+            st.session_state[page_key] = cur_page + 1
+            st.rerun()
 
 
 def _carousel_html(games: list) -> str:
@@ -399,6 +420,122 @@ def _build_lightgcn_graph(steam_id, owned_games, rec_games):
     return fig
 
 
+# ── 사이드바: 친구 목록 ───────────────────────────────────────────────────────
+def _render_friends_sidebar():
+    from collections import Counter
+    from dummy_data import GAME_CATALOG
+
+    friends_games    = st.session_state.get("friends_games", {})
+    friends_profiles = st.session_state.get("friends_profiles", {})
+    owned_games      = st.session_state.get("owned_games", [])
+
+    with st.sidebar:
+        st.markdown("""
+        <style>
+        [data-testid="stSidebar"] {background:#0e0e0e !important;}
+        [data-testid="stSidebar"] * {color:#e5e5e5;}
+        </style>
+        """, unsafe_allow_html=True)
+
+        st.markdown('<h3 style="color:#E50914;margin-bottom:4px;">👥 스팀 친구</h3>', unsafe_allow_html=True)
+
+        if not friends_games:
+            st.markdown(
+                '<p style="color:#737373;font-size:0.82rem;">친구 목록이 비공개이거나<br>Steam API 키가 없습니다.<br><br>'
+                '유사 패턴 기반 추천이 적용됩니다.</p>',
+                unsafe_allow_html=True,
+            )
+            return
+
+        # 현재 유저 장르 프로필 (플레이타임 가중)
+        user_genre_w: dict[str, float] = Counter()
+        total_min = sum(g.get("playtime_minutes", 0) for g in owned_games) or 1
+        for g in owned_games:
+            w = g.get("playtime_minutes", 0) / total_min
+            for genre in g.get("genres", []):
+                user_genre_w[genre] += w
+        user_genre_set = set(user_genre_w)
+
+        st.markdown(
+            f'<p style="color:#b3b3b3;font-size:0.8rem;margin-bottom:12px;">'
+            f'{len(friends_games)}명의 친구 데이터 기반 추천</p>',
+            unsafe_allow_html=True,
+        )
+
+        user_app_ids = {g["app_id"] for g in owned_games}
+
+        for fid, f_games in sorted(
+            friends_games.items(),
+            key=lambda kv: -len(kv[1]),
+        ):
+            profile  = friends_profiles.get(fid, {})
+            username = profile.get("username", f"User_{fid[-4:]}")
+            avatar   = profile.get("avatar_url", "")
+
+            # 친구 장르 프로필
+            f_genre_w: dict[str, float] = Counter()
+            f_total = sum(g.get("playtime_minutes", 0) for g in f_games) or 1
+            for g in f_games:
+                w = g.get("playtime_minutes", 0) / f_total
+                for genre in GAME_CATALOG.get(g["app_id"], {}).get("genres", []):
+                    f_genre_w[genre] += w
+            f_genre_set = set(f_genre_w)
+
+            # Jaccard 유사도
+            inter = len(user_genre_set & f_genre_set)
+            union = len(user_genre_set | f_genre_set)
+            sim   = int(inter / union * 100) if union else 0
+
+            # 공통 장르 (친구 플레이타임 기준 정렬)
+            common_genres = sorted(
+                user_genre_set & f_genre_set,
+                key=lambda g: f_genre_w.get(g, 0), reverse=True,
+            )[:3]
+
+            # 공통 소유 게임 수
+            f_app_ids = {g["app_id"] for g in f_games}
+            common_cnt = len(user_app_ids & f_app_ids)
+
+            # 색상
+            if sim >= 70:
+                clr = "#46d369"
+            elif sim >= 40:
+                clr = "#f5c518"
+            else:
+                clr = "#b3b3b3"
+
+            av_html = (
+                f'<img src="{avatar}" style="width:28px;height:28px;border-radius:50%;'
+                f'margin-right:8px;vertical-align:middle;border:1px solid {clr};">'
+            ) if avatar else "👤 "
+
+            tags_html = " ".join(
+                f'<span style="background:#2a2a2a;color:#b3b3b3;border-radius:3px;'
+                f'padding:1px 5px;font-size:0.68rem;">{g}</span>'
+                for g in common_genres
+            )
+
+            st.markdown(f"""
+            <div style="margin-bottom:14px;padding:12px;background:#1a1a1a;border-radius:8px;
+                        border-left:3px solid {clr};">
+                <div style="display:flex;align-items:center;margin-bottom:6px;">
+                    {av_html}<span style="font-weight:bold;font-size:0.86rem;color:#fff;
+                    white-space:nowrap;overflow:hidden;text-overflow:ellipsis;max-width:120px;">{username}</span>
+                </div>
+                <div style="font-size:0.72rem;color:#737373;margin-bottom:6px;">
+                    보유 {len(f_games)}개 &nbsp;·&nbsp; 공통 {common_cnt}개
+                </div>
+                <div style="display:flex;align-items:center;gap:6px;margin-bottom:6px;">
+                    <div style="flex:1;background:#2f2f2f;border-radius:3px;height:5px;">
+                        <div style="width:{sim}%;background:{clr};height:100%;border-radius:3px;"></div>
+                    </div>
+                    <span style="color:{clr};font-weight:bold;font-size:0.78rem;min-width:32px;">{sim}%</span>
+                </div>
+                <div>{tags_html}</div>
+            </div>
+            """, unsafe_allow_html=True)
+
+
 # ── 페이지: 로그인 ────────────────────────────────────────────────────────────
 def page_login():
     _, col, _ = st.columns([1, 1.4, 1])
@@ -450,6 +587,7 @@ def page_login():
             with st.spinner("스팀 친구 데이터 수집 중... (친구 목록 비공개 시 생략)"):
                 friends_games = steam.get_friends_games(sid, max_friends=20)
                 friends_count = len(friends_games)
+                friends_profiles = steam.get_friends_profiles(list(friends_games.keys())) if friends_games else {}
 
             with st.spinner("AI 추천 생성 중..."):
                 recs = _get_recs(sid, owned, friends_games)
@@ -457,6 +595,7 @@ def page_login():
             st.session_state.update(
                 steam_id=sid, user=user, stats=stats, recs=recs,
                 owned_games=owned, friends_games=friends_games,
+                friends_profiles=friends_profiles,
                 friends_count=friends_count, page="dashboard",
             )
             st.rerun()
@@ -470,6 +609,8 @@ def page_login():
 
 # ── 페이지: 대시보드 ──────────────────────────────────────────────────────────
 def page_dashboard():
+    _render_friends_sidebar()
+
     user  = st.session_state.user or {}
     stats = st.session_state.stats or {}
 
@@ -555,30 +696,17 @@ def page_dashboard():
 
 # ── 페이지: 추천 ──────────────────────────────────────────────────────────────
 def page_recommendations():
+    _render_friends_sidebar()
+
     recs     = st.session_state.recs or {}
     username = (st.session_state.user or {}).get("username", "Unknown")
-
-    # 헤더
-    friends_count = st.session_state.get("friends_count", 0)
-    if friends_count > 0:
-        data_source_html = (
-            f'<span style="background:#1a472a;color:#46d369;border-radius:4px;'
-            f'padding:2px 10px;font-size:0.82rem;font-weight:bold;margin-left:12px;">'
-            f'✅ 스팀 친구 {friends_count}명 실제 데이터 사용</span>'
-        )
-    else:
-        data_source_html = (
-            '<span style="background:#2a2a2a;color:#b3b3b3;border-radius:4px;'
-            'padding:2px 10px;font-size:0.82rem;margin-left:12px;">'
-            '친구 목록 비공개 — 유사 유저 패턴 기반</span>'
-        )
 
     hc1, hc2 = st.columns([7, 1])
     with hc1:
         st.markdown(f"""
         <div style="border-bottom:2px solid #2f2f2f;padding-bottom:20px;margin-bottom:40px;">
             <h1 style="font-size:2.2rem;font-weight:800;">AI 맞춤 추천 게임</h1>
-            <p style="color:#b3b3b3;">{username}님을 위한 게임 추천 {data_source_html}</p>
+            <p style="color:#b3b3b3;">{username}님을 위한 맞춤 추천</p>
         </div>
         """, unsafe_allow_html=True)
     with hc2:
