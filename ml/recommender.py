@@ -108,7 +108,7 @@ class GameRecommender:
                 })
 
         candidates.sort(key=lambda x: x["score"], reverse=True)
-        return self._clean_cards(candidates[:10])
+        return self._clean_cards(candidates[:20])
 
     # ── 알고리즘 2: 유사 유저 기반 협업 필터링 ──────────────────────────────
     def _collab_based(
@@ -205,7 +205,7 @@ class GameRecommender:
             })
 
         candidates.sort(key=lambda x: x["score"], reverse=True)
-        return self._clean_cards(candidates[:10])
+        return self._clean_cards(candidates[:15])
 
     # ── 알고리즘 3: 숨겨진 명작 ──────────────────────────────────────────────
     def _hidden_gems(self, owned_games: list[dict], owned_ids: set) -> list[dict]:
@@ -273,9 +273,9 @@ class GameRecommender:
             model = LightGCN(n_layers=3, emb_dim=64, lr=0.01, n_epochs=300)
             model.fit(interactions)
             if steam_id in model.user_index:
-                scored = model.recommend(steam_id, owned_ids, top_k=10)
+                scored = model.recommend(steam_id, owned_ids, top_k=12)
             else:
-                scored = model.recommend_new_user(owned_games, owned_ids, top_k=10)
+                scored = model.recommend_new_user(owned_games, owned_ids, top_k=12)
         except Exception:
             return []
 
