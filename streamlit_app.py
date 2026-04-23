@@ -775,7 +775,7 @@ def page_login():
                                   label_visibility="collapsed")
 
         st.markdown("<div style='height:8px'></div>", unsafe_allow_html=True)
-        _, btn_col, _ = st.columns([1.3, 2, 0.125])
+        _, btn_col, _ = st.columns([1.3, 2, 0.25])
         with btn_col:
             login_clicked = st.button("시작하기", key="login_btn")
 
