@@ -1,10 +1,10 @@
 from flask import Flask, jsonify, request
 from flask_cors import CORS
-from steam_service import SteamService
-from recommender import GameRecommender
-from cache_service import cache
-from snowflake_service import snowflake_svc
-from airflow_service import airflow_svc
+from services.steam_service import SteamService
+from ml.recommender import GameRecommender
+from services.cache_service import cache
+from services.snowflake_service import snowflake_svc
+from services.airflow_service import airflow_svc
 
 app = Flask(__name__)
 CORS(app)

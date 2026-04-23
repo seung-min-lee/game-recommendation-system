@@ -3,11 +3,11 @@ import streamlit.components.v1 as components
 import plotly.express as px
 import plotly.graph_objects as go
 import pandas as pd
-from steam_service import SteamService
-from recommender import GameRecommender
+from services.steam_service import SteamService
+from ml.recommender import GameRecommender
 
 try:
-    from snowflake_service import snowflake_svc
+    from services.snowflake_service import snowflake_svc
     _snowflake_ok = True
 except Exception:
     _snowflake_ok = False
@@ -325,7 +325,7 @@ def _carousel_html(games: list) -> str:
 
 # ── LightGCN 그래프 ────────────────────────────────────────────────────────────
 def _build_lightgcn_graph(steam_id, owned_games, rec_games):
-    from dummy_data import DUMMY_OWNED_GAMES, GAME_CATALOG
+    from data.dummy_data import DUMMY_OWNED_GAMES, GAME_CATALOG
 
     all_interactions = {}
     for uid, games in DUMMY_OWNED_GAMES.items():
@@ -428,7 +428,7 @@ def _build_lightgcn_graph(steam_id, owned_games, rec_games):
 # ── 사이드바: 친구 목록 ───────────────────────────────────────────────────────
 def _render_friends_sidebar():
     from collections import Counter
-    from dummy_data import GAME_CATALOG
+    from data.dummy_data import GAME_CATALOG
 
     friends_games    = st.session_state.get("friends_games", {})
     friends_profiles = st.session_state.get("friends_profiles", {})

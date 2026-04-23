@@ -1,7 +1,7 @@
 from __future__ import annotations
 from collections import defaultdict
-from dummy_data import GAME_CATALOG, DUMMY_OWNED_GAMES
-from lightgcn import LightGCN
+from data.dummy_data import GAME_CATALOG, DUMMY_OWNED_GAMES
+from ml.lightgcn import LightGCN
 
 
 class GameRecommender:

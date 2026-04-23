@@ -1,6 +1,6 @@
 import requests
 from datetime import datetime
-from config import config
+from config.config import config
 
 
 class AirflowService:

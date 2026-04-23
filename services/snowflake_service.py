@@ -1,5 +1,5 @@
 import snowflake.connector
-from config import config
+from config.config import config
 
 
 class SnowflakeService:

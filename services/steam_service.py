@@ -2,7 +2,7 @@ from __future__ import annotations
 import os
 import requests
 import concurrent.futures
-from dummy_data import GAME_CATALOG, DUMMY_OWNED_GAMES
+from data.dummy_data import GAME_CATALOG, DUMMY_OWNED_GAMES
 
 def _get_api_key() -> str:
     key = os.environ.get("STEAM_API_KEY", "")

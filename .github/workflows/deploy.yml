@@ -22,6 +22,7 @@ jobs:
         uses: docker/build-push-action@v5
         with:
           context: .
+          file: infra/Dockerfile
           push: true
           tags: ${{ secrets.DOCKERHUB_USERNAME }}/gamefinder-api:latest
 
