@@ -859,9 +859,10 @@ def page_dashboard():
     with btn_col:
         st.markdown("<div style='height:18px'></div>", unsafe_allow_html=True)
         if st.button("로그아웃", key="logout_btn"):
-            for k in ["steam_id", "user", "stats", "recs", "owned_games",
-                      "friends_games", "friends_profiles", "friends_count"]:
-                st.session_state[k] = None if k not in ("friends_games", "friends_profiles") else {}
+            # 리뷰·가격 캐시 포함 전체 세션 초기화
+            keys_to_clear = [k for k in st.session_state.keys()]
+            for k in keys_to_clear:
+                del st.session_state[k]
             st.session_state.page = "login"
             st.rerun()
 
