@@ -221,12 +221,16 @@ class SteamService:
 
     @staticmethod
     def _is_korean(text: str) -> bool:
-        """한글 문자가 전체 글자(알파벳+CJK) 중 50% 이상이면 이미 한국어로 판단."""
-        korean = sum(1 for c in text if '가' <= c <= '힣')
-        # 알파벳 + 한글 + 일본어/중국어 CJK
+        """한국어 판단 — 중국어/일본어가 조금이라도 있으면 무조건 번역 대상."""
+        korean  = sum(1 for c in text if '가' <= c <= '힣')
+        chinese = sum(1 for c in text if '一' <= c <= '鿿')
+        japanese = sum(1 for c in text if '぀' <= c <= 'ヿ')
         letters = sum(1 for c in text if c.isalpha())
         if letters == 0:
             return True
+        # 중국어 또는 일본어가 전체의 5% 이상이면 번역 필요
+        if (chinese + japanese) / letters >= 0.05:
+            return False
         return korean / letters >= 0.5
 
     def _translate_reviews(self, reviews: list[dict]) -> list[dict]:

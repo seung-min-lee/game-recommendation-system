@@ -426,18 +426,18 @@ def _show_reviews_panel(games: list, key_prefix: str):
         scrolling=False,
     )
 
-    # ── 페이지 번호 (카드 그리드 아래) ───────────────────────────────────────
+    # ── 페이지 번호 (카드 그리드 바로 아래, 여백 없음) ──────────────────────
     if total_pages > 1:
         _, pg_col, _ = st.columns([1, 2, 1])
         with pg_col:
             st.markdown(
-                f'<p style="color:#737373;font-size:0.75rem;margin:8px 0 2px;">'
+                f'<p style="color:#737373;font-size:0.75rem;margin:0 0 2px;">'
                 f'총 {len(sorted_reviews)}개 리뷰 · 페이지당 {PER_PAGE}개</p>',
                 unsafe_allow_html=True,
             )
             chosen = st.radio(
                 "",
-                options=list(range(1, min(total_pages, 10) + 1)),
+                options=list(range(1, min(total_pages, 16) + 1)),
                 index=cur_page,
                 horizontal=True,
                 key=f"rv_radio_{key_prefix}_{app_id}",
