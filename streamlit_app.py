@@ -150,6 +150,26 @@ def _get_recs(steam_id, owned_games, friends_games=None):
     }
 
 
+def _next_steam_sale() -> tuple[str, int]:
+    """다음 주요 스팀 세일 이름과 D-day(남은 일수)를 반환."""
+    from datetime import date
+    today = date.today()
+    y = today.year
+    # 매년 반복되는 주요 Steam 세일 일정 (근사치)
+    schedule = [
+        ("Spring Sale",  date(y, 3, 13)),
+        ("Summer Sale",  date(y, 6, 26)),
+        ("Autumn Sale",  date(y, 11, 27)),
+        ("Winter Sale",  date(y, 12, 19)),
+        ("Spring Sale",  date(y + 1, 3, 13)),
+        ("Summer Sale",  date(y + 1, 6, 26)),
+    ]
+    for name, d in schedule:
+        if d > today:
+            return name, (d - today).days
+    return ("Winter Sale", 365)
+
+
 def _render_carousel(games: list):
     html = _carousel_html(games)
     components.html(html, height=360, scrolling=False)
@@ -278,9 +298,49 @@ def _show_reviews_panel(games: list, key_prefix: str):
             st.rerun()
 
 
+def _price_badge_html(pi: dict | None, next_sale_name: str, next_sale_dday: int) -> str:
+    """가격/할인 배지 HTML 반환."""
+    if pi is None:
+        # 가격 정보 없음 — D-day만 표시
+        return (
+            f'<div style="display:flex;align-items:center;gap:6px;margin:5px 0 0;">'
+            f'<span style="color:#aaa;font-size:0.72rem;">🗓 {next_sale_name} D-{next_sale_dday}</span>'
+            f'</div>'
+        )
+    if pi.get("is_free"):
+        return (
+            f'<div style="margin:5px 0 0;">'
+            f'<span style="background:#46d369;color:#000;border-radius:3px;'
+            f'padding:2px 7px;font-size:0.75rem;font-weight:bold;">무료</span>'
+            f'</div>'
+        )
+    disc = pi.get("discount_percent", 0)
+    final = pi.get("final", "")
+    original = pi.get("original", "")
+    if disc > 0:
+        # 현재 할인 중
+        return (
+            f'<div style="display:flex;align-items:center;gap:5px;margin:5px 0 0;flex-wrap:wrap;">'
+            f'<span style="background:#FF6B35;color:#fff;border-radius:3px;'
+            f'padding:2px 6px;font-size:0.78rem;font-weight:bold;">-{disc}%</span>'
+            f'<span style="color:#aaa;text-decoration:line-through;font-size:0.72rem;">{original}</span>'
+            f'<span style="color:#46d369;font-weight:bold;font-size:0.82rem;">{final}</span>'
+            f'</div>'
+        )
+    else:
+        # 할인 없음 — 현재가 + 다음 세일 D-day
+        return (
+            f'<div style="display:flex;align-items:center;gap:6px;margin:5px 0 0;flex-wrap:wrap;">'
+            f'<span style="color:#e5e5e5;font-size:0.80rem;">{final}</span>'
+            f'<span style="color:#888;font-size:0.70rem;">· 🗓 D-{next_sale_dday}</span>'
+            f'</div>'
+        )
+
+
 def _carousel_html(games: list) -> str:
     if not games:
         return '<p style="color:#b3b3b3;padding:20px 0;">추천 결과가 없습니다.</p>'
+    next_sale_name, next_sale_dday = _next_steam_sale()
     cards = ""
     for g in games:
         name       = (g.get("name") or "Unknown").replace("'", "&#39;")
@@ -289,12 +349,14 @@ def _carousel_html(games: list) -> str:
         store_url  = g.get("store_url", "#")
         metacritic = g.get("metacritic")
         reason     = g.get("reason", "")
+        price_info = g.get("price_info")  # 가격 정보 (없으면 None)
         mc_html    = f'<span style="background:#E50914;color:#fff;border-radius:3px;padding:1px 6px;font-size:0.72rem;font-weight:bold;">MC {metacritic}</span>' if metacritic else ""
         reason_html = (
             f'<p style="color:#a0a0b0;font-size:0.72rem;margin:5px 0 0;'
             f'line-height:1.35;border-top:1px solid #2a2a2a;padding-top:5px;">'
             f'🤖 {reason}</p>'
         ) if reason else ""
+        price_html = _price_badge_html(price_info, next_sale_name, next_sale_dday)
         cards += f"""
         <div onclick="window.open('{store_url}','_blank')" style="
             background:#181818; border-radius:8px; overflow:hidden;
@@ -311,6 +373,7 @@ def _carousel_html(games: list) -> str:
                     <span style="color:#46d369;font-weight:bold;font-size:0.88rem;">{match_pct}% 일치</span>
                     {mc_html}
                 </div>
+                {price_html}
                 <p style="color:#E50914;font-size:0.78rem;margin:5px 0 0;font-weight:bold;">스토어 이동 ➔</p>
                 {reason_html}
             </div>
@@ -831,23 +894,53 @@ def page_recommendations():
             st.session_state.page = "dashboard"
             st.rerun()
 
+    # ── 가격/할인 정보 일괄 페치 (세션 캐시) ─────────────────────────────────
+    all_rec_games = (
+        recs.get("genre_based", []) +
+        recs.get("collab_based", []) +
+        recs.get("hidden_gems", []) +
+        recs.get("graph_based", [])
+    )
+    price_cache_key = "_price_cache"
+    if price_cache_key not in st.session_state:
+        st.session_state[price_cache_key] = {}
+    cached_prices: dict = st.session_state[price_cache_key]
+
+    uncached_ids = [
+        g["app_id"] for g in all_rec_games
+        if g.get("app_id") and g["app_id"] not in cached_prices
+    ]
+    if uncached_ids:
+        with st.spinner("Steam 할인 정보 확인 중..."):
+            fetched = steam.get_price_info_batch(list(set(uncached_ids)))
+            cached_prices.update(fetched)
+            # 조회 실패한 app_id도 None으로 마킹해 재시도 방지
+            for aid in uncached_ids:
+                cached_prices.setdefault(aid, None)
+        st.session_state[price_cache_key] = cached_prices
+
+    def _inject_price(games: list) -> list:
+        for g in games:
+            g["price_info"] = cached_prices.get(g.get("app_id"))
+        return games
+
     tab1, tab2, tab3, tab4 = st.tabs(["🎮 장르 기반 추천", "👥 유사 유저 기반 추천", "💎 숨겨진 명작", "🕸️ LightGCN"])
 
     with tab1:
         st.markdown('<h2 style="font-size:1.5rem;padding-left:10px;border-left:4px solid #E50914;">🎮 장르 기반 추천</h2>', unsafe_allow_html=True)
-        genre_games = recs.get("genre_based", [])
+        genre_games = _inject_price(recs.get("genre_based", []))
         _render_carousel(genre_games)
         _show_reviews_panel(genre_games, "genre")
 
     with tab2:
         st.markdown('<h2 style="font-size:1.5rem;padding-left:10px;border-left:4px solid #E50914;">👥 유사 유저 기반 추천</h2>', unsafe_allow_html=True)
-        collab_games = recs.get("collab_based", [])
+        collab_games = _inject_price(recs.get("collab_based", []))
         _render_carousel(collab_games)
         _show_reviews_panel(collab_games, "collab")
 
     with tab3:
         st.markdown('<h2 style="font-size:1.5rem;padding-left:10px;border-left:4px solid #E50914;">💎 숨겨진 명작</h2>', unsafe_allow_html=True)
-        hidden_games = recs.get("hidden_gems", [])
+        hidden_games = _inject_price(recs.get("hidden_gems", []))
         _render_carousel(hidden_games)
         _show_reviews_panel(hidden_games, "hidden")
 
@@ -860,7 +953,7 @@ def page_recommendations():
             '<span style="color:#fff;">흰 사각형</span> = 보유 게임</p>',
             unsafe_allow_html=True,
         )
-        graph_games = recs.get("graph_based", [])
+        graph_games = _inject_price(recs.get("graph_based", []))
         fig_graph = _build_lightgcn_graph(
             st.session_state.steam_id,
             st.session_state.owned_games or [],

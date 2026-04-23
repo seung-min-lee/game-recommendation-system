@@ -283,3 +283,49 @@ class SteamService:
                 if info:
                     result[aid] = info
         return result
+
+    def get_price_info_batch(self, app_ids: list[int], cc: str = "kr") -> dict[int, dict]:
+        """
+        Steam Store API로 현재 가격/할인 정보를 병렬 조회.
+        반환 형식 per app_id:
+          {"is_free": bool, "discount_percent": int,
+           "original": str, "final": str, "final_int": int}
+        조회 실패 시 해당 app_id 키 없음.
+        """
+        def _fetch_price(app_id: int) -> tuple[int, dict | None]:
+            try:
+                url = (
+                    f"https://store.steampowered.com/api/appdetails"
+                    f"?appids={app_id}&cc={cc}&filters=price_overview"
+                )
+                res = requests.get(url, timeout=5)
+                data = res.json().get(str(app_id), {})
+                if not data.get("success"):
+                    return app_id, None
+                po = data.get("data", {}).get("price_overview")
+                if po is None:
+                    # price_overview 없으면 무료 게임
+                    return app_id, {"is_free": True, "discount_percent": 0,
+                                    "original": "무료", "final": "무료", "final_int": 0}
+                return app_id, {
+                    "is_free": False,
+                    "discount_percent": po.get("discount_percent", 0),
+                    "original": po.get("initial_formatted", ""),
+                    "final":    po.get("final_formatted", ""),
+                    "final_int": po.get("final", 0),
+                }
+            except Exception:
+                return app_id, None
+
+        result: dict[int, dict] = {}
+        with concurrent.futures.ThreadPoolExecutor(max_workers=8) as ex:
+            futures = {ex.submit(_fetch_price, aid): aid for aid in app_ids}
+            done, _ = concurrent.futures.wait(futures, timeout=12)
+            for fut in done:
+                try:
+                    aid, info = fut.result()
+                    if info is not None:
+                        result[aid] = info
+                except Exception:
+                    pass
+        return result
