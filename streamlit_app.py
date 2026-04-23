@@ -175,18 +175,20 @@ def _render_carousel(games: list):
     components.html(html, height=360, scrolling=False)
 
 
-def _review_card_html(r: dict) -> str:
-    """리뷰 하나를 완전한 HTML 카드로 변환 (unclosed tag 없음)."""
+def _review_card_html(r: dict, idx: int) -> str:
+    """리뷰 카드 HTML — 고정 높이 + 하단 화살표 접기/펼치기."""
     icon  = "👍" if r["voted_up"] else "👎"
     color = "#46d369" if r["voted_up"] else "#E50914"
     pt    = r.get("playtime_hours", 0)
     text  = (r.get("text") or "(리뷰 내용 없음)").replace("<", "&lt;").replace(">", "&gt;")
     return (
-        f'<div style="background:#202020;border-radius:8px;padding:14px;'
-        f'border-top:2px solid {color};min-height:100px;">'
-        f'<div style="color:{color};font-weight:bold;margin-bottom:8px;font-size:0.82rem;">'
-        f'{icon} &nbsp;플레이 {pt}시간</div>'
-        f'<p style="color:#d0d0d0;font-size:0.81rem;line-height:1.55;margin:0;">{text}</p>'
+        f'<div class="card" id="card-{idx}" style="border-top:3px solid {color};">'
+        f'  <div class="card-header" style="color:{color};">{icon}&nbsp; 플레이 {pt}시간</div>'
+        f'  <div class="card-wrap" id="wrap-{idx}">'
+        f'    <div class="card-body" id="body-{idx}">{text}</div>'
+        f'    <div class="fade" id="fade-{idx}"></div>'
+        f'  </div>'
+        f'  <button class="toggle-btn" id="btn-{idx}" onclick="toggle({idx})" style="display:none;">▼</button>'
         f'</div>'
     )
 
@@ -252,8 +254,14 @@ def _show_reviews_panel(games: list, key_prefix: str):
     )
 
     if not all_reviews:
-        st.markdown('<p style="color:#737373;font-size:0.85rem;margin-top:8px;">리뷰 데이터를 가져올 수 없습니다.</p>',
-                    unsafe_allow_html=True)
+        st.markdown(
+            '<div style="background:#181818;border-radius:8px;padding:20px 24px;margin-top:10px;">'
+            '<p style="color:#737373;font-size:0.9rem;margin:0;">'
+            '⚠️ 이 게임의 Steam 리뷰를 가져올 수 없습니다.<br>'
+            '<span style="font-size:0.8rem;">Steam 구매 리뷰가 없거나 API 응답이 없는 경우입니다.</span>'
+            '</p></div>',
+            unsafe_allow_html=True,
+        )
         return
 
     # ── 페이지네이션 ──────────────────────────────────────────────────────────
@@ -265,16 +273,123 @@ def _show_reviews_panel(games: list, key_prefix: str):
     cur_page    = min(st.session_state[page_key], total_pages - 1)
     page_reviews = all_reviews[cur_page * PER_PAGE:(cur_page + 1) * PER_PAGE]
 
-    # ── 리뷰 카드 그리드 (3열) — 각 카드는 완전한 HTML ──────────────────────
-    st.markdown("<div style='margin-top:12px;'>", unsafe_allow_html=True)
-    for row_start in range(0, len(page_reviews), 3):
-        row = page_reviews[row_start:row_start + 3]
-        cols = st.columns(3)
-        for i, r in enumerate(row):
-            with cols[i]:
-                st.markdown(_review_card_html(r), unsafe_allow_html=True)
-        st.markdown("<div style='height:10px'></div>", unsafe_allow_html=True)
-    st.markdown("</div>", unsafe_allow_html=True)
+    # ── 리뷰 카드 그리드 — components.html (고정 높이 + 하단 화살표 접기/펼치기) ──
+    CARD_H      = 170   # 카드 콘텐츠 영역 고정 높이(px)
+    cards_html  = "".join(_review_card_html(r, i) for i, r in enumerate(page_reviews))
+    row_count   = (len(page_reviews) + 2) // 3
+    base_height = row_count * (CARD_H + 60) + 30   # 카드 + 헤더 + gap + 여백
+    components.html(
+        f"""<!DOCTYPE html>
+<html><head><meta charset="utf-8">
+<style>
+  *, *::before, *::after {{ box-sizing: border-box; margin: 0; padding: 0; }}
+  html, body {{
+    background: #141414;
+    font-family: 'Noto Sans KR', -apple-system, sans-serif;
+    overflow-x: hidden;
+  }}
+  .grid {{
+    display: grid;
+    grid-template-columns: repeat(3, 1fr);
+    gap: 14px;
+    padding: 6px 2px 10px;
+    /* 각 행의 카드 높이를 auto로 — 카드가 직접 고정 */
+    align-items: start;
+  }}
+  .card {{
+    background: #202020;
+    border-radius: 8px;
+    padding: 14px 16px 0;
+    display: flex;
+    flex-direction: column;
+  }}
+  .card-header {{
+    font-weight: bold;
+    font-size: 0.82rem;
+    margin-bottom: 10px;
+    flex-shrink: 0;
+    white-space: nowrap;
+  }}
+  /* 텍스트 영역 래퍼 — 고정 높이, 넘치면 숨김 */
+  .card-wrap {{
+    position: relative;
+    height: {CARD_H}px;
+    overflow: hidden;
+    transition: height 0.28s ease;
+  }}
+  .card-wrap.expanded {{
+    height: auto;
+    overflow: visible;
+  }}
+  /* 하단 gradient fade — 텍스트가 잘릴 때만 표시 */
+  .fade {{
+    position: absolute;
+    bottom: 0; left: 0; right: 0;
+    height: 40px;
+    background: linear-gradient(transparent, #202020);
+    pointer-events: none;
+    transition: opacity 0.2s;
+  }}
+  .card-wrap.expanded .fade {{
+    display: none;
+  }}
+  .card-body {{
+    font-size: 0.81rem;
+    line-height: 1.65;
+    color: #d0d0d0;
+    word-break: break-word;
+  }}
+  /* 하단 화살표 버튼 */
+  .toggle-btn {{
+    width: 100%;
+    background: none;
+    border: none;
+    border-top: 1px solid #2e2e2e;
+    color: #666;
+    font-size: 0.85rem;
+    cursor: pointer;
+    padding: 7px 0 9px;
+    text-align: center;
+    flex-shrink: 0;
+    transition: color 0.15s, background 0.15s;
+    border-radius: 0 0 8px 8px;
+    margin-top: 6px;
+  }}
+  .toggle-btn:hover {{ color: #bbb; background: #272727; }}
+</style>
+</head><body>
+<div class="grid" id="grid">{cards_html}</div>
+<script>
+  var CARD_H = {CARD_H};
+
+  document.addEventListener('DOMContentLoaded', function() {{
+    // 각 카드: 텍스트가 고정 높이를 초과하면 fade + 버튼 표시
+    document.querySelectorAll('.card-wrap').forEach(function(wrap) {{
+      var idx  = wrap.id.replace('wrap-', '');
+      var body = document.getElementById('body-' + idx);
+      var btn  = document.getElementById('btn-' + idx);
+      var fade = document.getElementById('fade-' + idx);
+      if (body.scrollHeight <= CARD_H + 4) {{
+        // 텍스트가 짧음 — fade · 버튼 숨김
+        if (fade) fade.style.display = 'none';
+        btn.style.display = 'none';
+      }} else {{
+        btn.style.display = 'block';
+      }}
+    }});
+  }});
+
+  function toggle(idx) {{
+    var wrap = document.getElementById('wrap-' + idx);
+    var btn  = document.getElementById('btn-' + idx);
+    var expanded = wrap.classList.toggle('expanded');
+    btn.textContent = expanded ? '▲' : '▼';
+  }}
+</script>
+</body></html>""",
+        height=base_height,
+        scrolling=True,
+    )
 
     # ── 페이지 네비게이션 (st.radio — 버튼보다 1.4배 작음) ──────────────────
     if total_pages > 1:

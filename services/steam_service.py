@@ -167,81 +167,113 @@ class SteamService:
     def get_reviews(self, app_id: int, num: int = 100) -> dict:
         """
         Steam Store 리뷰 API + 한국어 자동 번역.
-        반환: {
-          "summary": {"total", "positive_pct", "score_desc"},
-          "reviews": [{"text", "voted_up", "playtime_hours"}]
-        }
+        'all' 언어 조회 실패 시 영어 전용으로 재시도.
         """
-        try:
-            url = f"https://store.steampowered.com/appreviews/{app_id}"
-            res = requests.get(url, params={
-                "json": 1,
-                "num_per_page": num,
-                "language": "all",
-                "review_type": "all",
-                "purchase_type": "steam",
-                "filter": "helpful",
-            }, timeout=6)
-            data = res.json()
-            qs       = data.get("query_summary", {})
-            total    = qs.get("total_reviews", 0)
-            positive = qs.get("total_positive", 0)
-            pct      = round(positive / total * 100) if total > 0 else 0
-
-            raw_reviews = []
-            for r in data.get("reviews", [])[:num]:
-                text = r.get("review", "").strip().replace("\n", " ")
-                if len(text) > 300:
-                    text = text[:300] + "..."
-                raw_reviews.append({
-                    "text": text,
-                    "voted_up": r.get("voted_up", True),
-                    "playtime_hours": round(r.get("author", {}).get("playtime_forever", 0) / 60, 1),
-                    "language": r.get("language", ""),
-                })
-
-            # 병렬 번역 (이미 한국어면 skip)
-            reviews = self._translate_reviews(raw_reviews)
-
-            return {
-                "summary": {
-                    "total": total,
-                    "positive_pct": pct,
-                    "score_desc": qs.get("review_score_desc", ""),
+        def _fetch(language: str, purchase_type: str) -> dict:
+            res = requests.get(
+                f"https://store.steampowered.com/appreviews/{app_id}",
+                params={
+                    "json": 1,
+                    "num_per_page": num,
+                    "language": language,
+                    "review_type": "all",
+                    "purchase_type": purchase_type,
+                    "filter": "helpful",
                 },
-                "reviews": reviews,
-            }
+                timeout=10,
+            )
+            return res.json()
+
+        data: dict = {}
+        # 1차: all 언어 + steam 구매
+        try:
+            data = _fetch("all", "steam")
         except Exception:
+            pass
+
+        # 2차: 리뷰가 비었으면 english + all 구매로 재시도
+        if not data.get("reviews"):
+            try:
+                data = _fetch("english", "all")
+            except Exception:
+                pass
+
+        if not data:
             return {"summary": {}, "reviews": []}
+
+        qs       = data.get("query_summary", {})
+        total    = qs.get("total_reviews", 0)
+        positive = qs.get("total_positive", 0)
+        pct      = round(positive / total * 100) if total > 0 else 0
+
+        raw_reviews = []
+        for r in data.get("reviews", [])[:num]:
+            text = r.get("review", "").strip().replace("\n", " ")
+            if not text:
+                continue
+            if len(text) > 500:
+                text = text[:500] + "..."
+            raw_reviews.append({
+                "text": text,
+                "voted_up": r.get("voted_up", True),
+                "playtime_hours": round(r.get("author", {}).get("playtime_forever", 0) / 60, 1),
+                "language": r.get("language", ""),
+            })
+
+        reviews = self._translate_reviews(raw_reviews)
+        return {
+            "summary": {
+                "total": total,
+                "positive_pct": pct,
+                "score_desc": qs.get("review_score_desc", ""),
+            },
+            "reviews": reviews,
+        }
 
     @staticmethod
     def _is_korean(text: str) -> bool:
-        return sum(1 for c in text if '가' <= c <= '힣') > len(text) * 0.15
+        """한글 문자가 전체 글자(알파벳+CJK) 중 50% 이상이면 이미 한국어로 판단."""
+        korean = sum(1 for c in text if '가' <= c <= '힣')
+        # 알파벳 + 한글 + 일본어/중국어 CJK
+        letters = sum(1 for c in text if c.isalpha())
+        if letters == 0:
+            return True
+        return korean / letters >= 0.5
 
     def _translate_reviews(self, reviews: list[dict]) -> list[dict]:
-        """한국어가 아닌 리뷰를 병렬로 번역."""
-        needs = [(i, r) for i, r in enumerate(reviews) if r["text"] and not self._is_korean(r["text"])]
+        """한국어가 아닌 리뷰를 순차 번역 (rate-limit 대응)."""
+        from deep_translator import GoogleTranslator
+
+        translated = list(reviews)
+        needs = [
+            (i, r) for i, r in enumerate(reviews)
+            if r.get("text") and not self._is_korean(r["text"])
+        ]
         if not needs:
             return reviews
 
-        translated = list(reviews)
-
         def _do(item):
             idx, r = item
-            try:
-                from deep_translator import GoogleTranslator
-                t = GoogleTranslator(source="auto", target="ko").translate(r["text"])
-                return idx, t or r["text"]
-            except Exception:
-                return idx, r["text"]
+            for attempt in range(3):
+                try:
+                    import time
+                    if attempt:
+                        time.sleep(attempt * 0.5)
+                    t = GoogleTranslator(source="auto", target="ko").translate(r["text"])
+                    return idx, (t or r["text"])
+                except Exception:
+                    continue
+            return idx, r["text"]
 
-        with concurrent.futures.ThreadPoolExecutor(max_workers=6) as ex:
-            done, _ = concurrent.futures.wait(
-                [ex.submit(_do, item) for item in needs], timeout=10
-            )
+        with concurrent.futures.ThreadPoolExecutor(max_workers=5) as ex:
+            futures = [ex.submit(_do, item) for item in needs]
+            done, _ = concurrent.futures.wait(futures, timeout=60)
             for fut in done:
-                idx, text = fut.result()
-                translated[idx] = {**translated[idx], "text": text}
+                try:
+                    idx, text = fut.result()
+                    translated[idx] = {**translated[idx], "text": text}
+                except Exception:
+                    pass
 
         return translated
 
