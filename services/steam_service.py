@@ -1,5 +1,7 @@
 from __future__ import annotations
 import os
+import asyncio
+import aiohttp
 import requests
 import concurrent.futures
 from data.dummy_data import GAME_CATALOG, DUMMY_OWNED_GAMES
@@ -326,46 +328,45 @@ class SteamService:
 
     def get_price_info_batch(self, app_ids: list[int], cc: str = "kr") -> dict[int, dict]:
         """
-        Steam Store API로 현재 가격/할인 정보를 병렬 조회.
+        Steam Store API로 현재 가격/할인 정보를 비동기 병렬 조회.
+        ThreadPoolExecutor 대신 asyncio + aiohttp 사용 (GIL 우회, I/O bound 최적화).
         반환 형식 per app_id:
           {"is_free": bool, "discount_percent": int,
            "original": str, "final": str, "final_int": int}
         조회 실패 시 해당 app_id 키 없음.
         """
-        def _fetch_price(app_id: int) -> tuple[int, dict | None]:
+        async def _fetch_price(session: aiohttp.ClientSession, app_id: int) -> tuple[int, dict | None]:
+            url = (
+                f"https://store.steampowered.com/api/appdetails"
+                f"?appids={app_id}&cc={cc}&filters=price_overview"
+            )
             try:
-                url = (
-                    f"https://store.steampowered.com/api/appdetails"
-                    f"?appids={app_id}&cc={cc}&filters=price_overview"
-                )
-                res = requests.get(url, timeout=5)
-                data = res.json().get(str(app_id), {})
-                if not data.get("success"):
-                    return app_id, None
-                po = data.get("data", {}).get("price_overview")
-                if po is None:
-                    # price_overview 없으면 무료 게임
-                    return app_id, {"is_free": True, "discount_percent": 0,
-                                    "original": "무료", "final": "무료", "final_int": 0}
-                return app_id, {
-                    "is_free": False,
-                    "discount_percent": po.get("discount_percent", 0),
-                    "original": po.get("initial_formatted", ""),
-                    "final":    po.get("final_formatted", ""),
-                    "final_int": po.get("final", 0),
-                }
+                async with session.get(url, timeout=aiohttp.ClientTimeout(total=5)) as res:
+                    data = (await res.json()).get(str(app_id), {})
+                    if not data.get("success"):
+                        return app_id, None
+                    po = data.get("data", {}).get("price_overview")
+                    if po is None:
+                        return app_id, {"is_free": True, "discount_percent": 0,
+                                        "original": "무료", "final": "무료", "final_int": 0}
+                    return app_id, {
+                        "is_free": False,
+                        "discount_percent": po.get("discount_percent", 0),
+                        "original": po.get("initial_formatted", ""),
+                        "final":    po.get("final_formatted", ""),
+                        "final_int": po.get("final", 0),
+                    }
             except Exception:
                 return app_id, None
 
-        result: dict[int, dict] = {}
-        with concurrent.futures.ThreadPoolExecutor(max_workers=8) as ex:
-            futures = {ex.submit(_fetch_price, aid): aid for aid in app_ids}
-            done, _ = concurrent.futures.wait(futures, timeout=12)
-            for fut in done:
-                try:
-                    aid, info = fut.result()
-                    if info is not None:
-                        result[aid] = info
-                except Exception:
-                    pass
-        return result
+        async def _run_all() -> dict[int, dict]:
+            async with aiohttp.ClientSession() as session:
+                tasks = [_fetch_price(session, aid) for aid in app_ids]
+                results = await asyncio.gather(*tasks, return_exceptions=True)
+            return {
+                aid: info
+                for aid, info in results
+                if not isinstance(info, Exception) and info is not None
+            }
+
+        return asyncio.run(_run_all())

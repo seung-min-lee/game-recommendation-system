@@ -4,4 +4,5 @@ pandas
 scipy
 numpy
 requests
+aiohttp
 deep-translator
