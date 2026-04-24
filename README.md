@@ -22,27 +22,45 @@
 
 | 영역 | 기술 |
 |------|------|
-| 백엔드 | Python + Flask, Gunicorn, Docker |
-| 인프라 | AWS EC2 (t3.medium), ALB, Nginx |
-| 데이터 웨어하우스 | Snowflake (Bronze / Silver / Gold) |
-| 파이프라인 | Apache Airflow (Docker Compose on EC2) |
-| 캐시 | ElastiCache Redis |
-| DB | RDS MySQL 8.0 |
-| CI/CD | GitHub Actions → Docker Hub → EC2 |
+| 프론트엔드 | Streamlit 1.35.0 (Python 3.8.10), HTML/CSS/JS |
+| 백엔드 API | Python 3.11 + Flask + Gunicorn, Docker (python:3.11-slim) |
+| ML 모델 | LightGCN (협업 필터링 CF), Content-Based Filtering (CBF) |
+| 데이터 분석 | plotly, pandas, scipy, numpy |
+| 번역 | deep-translator (GoogleTranslator) — 비한국어 리뷰 자동 번역 |
+| 외부 API | Steam Web API (유저 정보, 게임 목록, 리뷰) |
+| 데이터 웨어하우스 | Snowflake GAME_DW (Bronze / Silver / Gold 3-tier) |
+| 데이터 변환 | dbt (Silver/Gold 레이어 SQL 모델링) |
+| 파이프라인 | Apache Airflow (AWS EKS) — game_pipeline DAG |
+| 인프라 | AWS EC2 t3.medium (ap-northeast-2), ElastiCache Redis, RDS MySQL |
+| 컨테이너 | Docker + Docker Hub (gamefinder-api:latest) |
+| CI/CD | GitHub Actions → Docker Hub → EC2 SSH 자동 배포 |
+| 배포 | Streamlit Community Cloud (프론트) + AWS EC2 (API) |
 
 ## 추천 알고리즘
 
 ### 1. CBF — 콘텐츠 기반 필터링
 - 유저의 장르별 플레이타임을 가중치로 사용
+- `LATERAL FLATTEN(genres)`으로 게임별 장르 분해 → 장르별 total_hours 합산
+- 선호 장르와 일치하는 미소유 게임 similarity 점수 합산 → Top 10
 - Snowflake `GOLD.RECOMMEND_CBF` 테이블
 
-### 2. CF — 협업 필터링
-- 공통 게임 수 기반 Jaccard 유사도로 유사 유저 탐색
+### 2. CF — 협업 필터링 (Jaccard Similarity)
+- 같은 게임을 플레이한 유저 간 Jaccard 유사도 계산
+- `jaccard_sim = 공통 게임 수 / 내 전체 게임 수`
+- 유사 유저의 게임 중 미소유 게임을 score 합산 → Top 10
 - Snowflake `GOLD.RECOMMEND_CF` 테이블
 
 ### 3. Hidden Gems — 숨겨진 명작
-- Metacritic 87점 이상 + 선호 장르 + 미소유 게임
+- 플레이타임 기준 선호 장르 Top 3 추출
+- Metacritic 87점 이상 + 선호 장르 + 미소유 게임 필터링
+- `score = 장르 매칭 수 × (metacritic / 100.0)` → Top 10
 - Snowflake `GOLD.HIDDEN_GEMS` 테이블
+
+### 4. LightGCN — 그래프 기반 협업 필터링
+- 유저-게임 이분 그래프에서 Graph Convolutional Network 학습
+- 유저와 게임의 임베딩을 여러 레이어에 걸쳐 전파·집계
+- 플레이 기록이 적은 유저에게도 효과적인 추천 제공
+- Snowflake Gold Layer를 통해 추천 결과 서빙
 
 ## 데이터 파이프라인 (Airflow DAG)
 
@@ -78,20 +96,38 @@ GET /api/recommend/<steam_id>
 ## 프로젝트 구조
 
 ```
-├── app.py                  # Flask 앱 진입점
-├── config.py               # 환경변수 설정
-├── steam_service.py        # Steam API 연동
-├── snowflake_service.py    # Snowflake Gold Layer 쿼리
-├── cache_service.py        # ElastiCache Redis
-├── airflow_service.py      # Airflow REST API 트리거
-├── recommender.py          # 로컬 추천 로직 (폴백)
-├── Dockerfile
+├── streamlit_app.py            # Streamlit 프론트엔드 메인
 ├── requirements.txt
-├── gamefinder_dbt/         # dbt 모델 (Bronze→Silver→Gold SQL)
+├── frontend/                   # 화면 HTML
+│   ├── login.html
+│   ├── dashboard.html
+│   └── recommendations.html
+├── services/                   # 외부 서비스 연동
+│   ├── steam_service.py        # Steam API
+│   ├── snowflake_service.py    # Snowflake Gold Layer 쿼리
+│   ├── cache_service.py        # ElastiCache Redis
+│   └── airflow_service.py      # Airflow REST API 트리거
+├── ml/                         # ML 모델
+│   ├── lightgcn.py             # LightGCN 그래프 추천
+│   └── recommender.py          # 로컬 추천 로직 (폴백)
+├── config/
+│   └── config.py               # 환경변수 설정
+├── data/
+│   └── dummy_data.py
+├── infra/                      # 배포 인프라
+│   ├── app.py                  # Flask API 진입점
+│   ├── Dockerfile
+│   ├── requirements-flask.txt
+│   └── aws_setup.sh            # EC2 환경 세팅 스크립트
+├── gamefinder_dbt/             # dbt 모델 (Bronze→Silver→Gold)
 │   └── models/
 │       ├── sources.yml
-│       ├── silver/
-│       └── gold/
+│       ├── silver/             # user_game_stats, game_features
+│       └── gold/               # recommend_cf, recommend_cbf, hidden_gems
+├── docs/                       # 아키텍처 다이어그램 PDF
+├── screenshots/                # 앱 UI 스크린샷
+├── scripts/
+│   └── notion_update.py        # Notion 문서 자동화
 └── .github/workflows/
-    └── deploy.yml          # GitHub Actions CI/CD
+    └── deploy.yml              # GitHub Actions CI/CD
 ```
