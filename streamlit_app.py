@@ -1643,7 +1643,7 @@ def page_recommendations():
             g["price_info"] = cached_prices.get(g.get("app_id"))
         return games
 
-    tab1, tab2, tab3, tab4, tab5 = st.tabs(["🎮 장르 기반 추천", "👥 유사 유저 기반 추천", "💎 숨겨진 명작", "🕸️ LightGCN", "📊 나 & 친구 통계"])
+    tab1, tab2, tab3, tab4 = st.tabs(["🎮 장르 기반 추천", "👥 유사 유저 기반 추천", "💎 숨겨진 명작", "🕸️ LightGCN"])
 
     with tab1:
         st.markdown('<h2 style="font-size:1.5rem;padding-left:10px;border-left:4px solid #E50914;">🎮 장르 기반 추천</h2>', unsafe_allow_html=True)
@@ -1683,9 +1683,6 @@ def page_recommendations():
         _render_carousel(graph_games)
         _show_reviews_panel(graph_games, "graph")
 
-    with tab5:
-        st.markdown('<h2 style="font-size:1.5rem;padding-left:10px;border-left:4px solid #E50914;">📊 나 & 친구 통계</h2>', unsafe_allow_html=True)
-        _render_stats_tab()
 
 
 # ── 라우터 ────────────────────────────────────────────────────────────────────
