@@ -1604,7 +1604,7 @@ def page_recommendations():
     recs     = st.session_state.recs or {}
     username = (st.session_state.user or {}).get("username", "Unknown")
 
-    hc1, hc2 = st.columns([7, 1])
+    hc1, hc2, hc3 = st.columns([6, 1, 1])
     with hc1:
         st.markdown(f"""
         <div style="border-bottom:2px solid #2f2f2f;padding-bottom:20px;margin-bottom:40px;">
@@ -1613,6 +1613,11 @@ def page_recommendations():
         </div>
         """, unsafe_allow_html=True)
     with hc2:
+        st.markdown("<br>", unsafe_allow_html=True)
+        if st.button("🎯 장르 탐색", key="go_genre_from_rec"):
+            st.session_state.page = "genre_explorer"
+            st.rerun()
+    with hc3:
         st.markdown("<br>", unsafe_allow_html=True)
         if st.button("← 통계", key="back_btn"):
             st.session_state.page = "dashboard"
