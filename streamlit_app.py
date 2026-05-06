@@ -576,10 +576,10 @@ def _build_lightgcn_graph(steam_id, owned_games, rec_games):
     wx, wy = _collect_edges(True, owned_only=True)
     rx, ry = _collect_edges(True, rec_only=True)
 
-    # 타 유저 연결선 — 회색, 뚜렷하게
+    # 타 유저 연결선 — 노란색
     fig.add_trace(go.Scatter(
         x=ox, y=oy, mode="lines",
-        line=dict(width=0.8, color="rgba(180,180,180,0.18)"),
+        line=dict(width=0.8, color="rgba(255,220,50,0.35)"),
         hoverinfo="none", showlegend=False,
     ))
     # 내 보유 게임 연결선 — 파랑, 밝게
