@@ -1316,6 +1316,13 @@ def page_dashboard():
             st.plotly_chart(fig2, use_container_width=True)
 
     st.markdown("<br>", unsafe_allow_html=True)
+
+    # ── 나 & 친구 통계 (로그인 직후 바로 노출)
+    st.markdown("---")
+    st.markdown('<h2 style="font-size:1.4rem;padding-left:10px;border-left:4px solid #E50914;margin-bottom:16px;">📊 나 & 친구 통계</h2>', unsafe_allow_html=True)
+    _render_stats_tab()
+
+    st.markdown("<br>", unsafe_allow_html=True)
     _, btn_col, _ = st.columns([1, 1, 1])
     with btn_col:
         if st.button("맞춤 추천작 보기 ➔", key="go_recs"):
