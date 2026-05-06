@@ -1255,14 +1255,31 @@ def _render_friends_sidebar():
             )
 
             is_selected = st.session_state.get("selected_friend") == fid
-            card_bg = "#252525" if is_selected else "#1a1a1a"
-            st.markdown(f"""
-            <div style="margin-bottom:6px;padding:12px;background:{card_bg};border-radius:8px;
-                        border-left:3px solid {clr};">
-                <div style="display:flex;align-items:center;margin-bottom:6px;">
+            card_bg     = "#252525" if is_selected else "#1a1a1a"
+            arrow_clr   = "#64A0FF" if is_selected else "#555"
+
+            # 이름 행: 아바타+이름(좌) / →버튼(우)
+            name_col, arrow_col = st.columns([5, 1])
+            with name_col:
+                st.markdown(f"""
+                <div style="padding:10px 10px 0 10px;background:{card_bg};
+                            border-radius:8px 8px 0 0;border-left:3px solid {clr};
+                            display:flex;align-items:center;">
                     {av_html}<span style="font-weight:bold;font-size:0.86rem;color:#fff;
-                    white-space:nowrap;overflow:hidden;text-overflow:ellipsis;max-width:120px;">{username}</span>
+                    white-space:nowrap;overflow:hidden;text-overflow:ellipsis;max-width:100px;">{username}</span>
                 </div>
+                """, unsafe_allow_html=True)
+            with arrow_col:
+                st.markdown("<div style='height:4px'></div>", unsafe_allow_html=True)
+                if st.button("→" if not is_selected else "✕", key=f"stat_btn_{fid}",
+                             help="통계 비교 보기"):
+                    st.session_state.selected_friend = None if is_selected else fid
+                    st.rerun()
+
+            # 나머지 카드 본문
+            st.markdown(f"""
+            <div style="margin-bottom:10px;padding:6px 12px 10px 12px;background:{card_bg};
+                        border-radius:0 0 8px 8px;border-left:3px solid {clr};">
                 <div style="font-size:0.72rem;color:#737373;margin-bottom:6px;">
                     보유 {len(f_games)}개 &nbsp;·&nbsp; 공통 {common_cnt}개
                 </div>
@@ -1275,13 +1292,6 @@ def _render_friends_sidebar():
                 <div>{tags_html}</div>
             </div>
             """, unsafe_allow_html=True)
-            btn_label = "✅ 비교 중" if is_selected else "📊 통계보기"
-            if st.button(btn_label, key=f"stat_btn_{fid}", use_container_width=True):
-                if is_selected:
-                    st.session_state.selected_friend = None
-                else:
-                    st.session_state.selected_friend = fid
-                st.rerun()
 
 
 # ── 페이지: 로그인 ────────────────────────────────────────────────────────────
