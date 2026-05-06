@@ -120,6 +120,23 @@ for key, default in [
 
 
 # ── 공통 유틸 ─────────────────────────────────────────────────────────────────
+def _genre_vector(games: list[dict], game_catalog: dict) -> dict[str, float]:
+    """플레이타임 가중 장르 벡터 반환 (L2 정규화)."""
+    import math
+    vec: dict[str, float] = {}
+    for g in games:
+        hrs = g.get("playtime_minutes", 0) / 60
+        for genre in game_catalog.get(g.get("app_id"), {}).get("genres", []):
+            vec[genre] = vec.get(genre, 0.0) + hrs
+    norm = math.sqrt(sum(v * v for v in vec.values())) or 1.0
+    return {g: v / norm for g, v in vec.items()}
+
+
+def _cosine_sim(vec_a: dict[str, float], vec_b: dict[str, float]) -> float:
+    """두 장르 벡터의 코사인 유사도 (0~1)."""
+    return sum(vec_a.get(g, 0.0) * vec_b.get(g, 0.0) for g in vec_a)
+
+
 def _get_recs(steam_id, owned_games, friends_games=None):
     if _snowflake_ok:
         try:
@@ -748,10 +765,10 @@ def _render_friend_comparison(fid: str):
     f_ids  = {g["app_id"] for g in f_games}
     common_ids = my_ids & f_ids
 
-    # Jaccard
-    my_gs = set(my_gh); f_gs = set(f_gh)
-    inter = len(my_gs & f_gs); union = len(my_gs | f_gs)
-    sim = int(inter / union * 100) if union else 0
+    # 코사인 유사도 (플레이타임 가중)
+    my_vec = _genre_vector(owned_games, GAME_CATALOG)
+    f_vec  = _genre_vector(f_games,     GAME_CATALOG)
+    sim = int(_cosine_sim(my_vec, f_vec) * 100)
     sim_clr = "#46d369" if sim >= 70 else "#f5c518" if sim >= 40 else "#b3b3b3"
 
     # ── 헤더
@@ -1018,21 +1035,12 @@ def _render_stats_tab():
     st.markdown("---")
     st.markdown('<h3 style="font-size:1.2rem;margin-bottom:16px;">👥 친구와 비교</h3>', unsafe_allow_html=True)
 
-    # Jaccard 유사도 계산 후 상위 5명만
-    my_genre_set = set(my_genre_hrs)
-    def _jaccard(f_games):
-        fw: dict[str, float] = {}
-        ft = sum(g.get("playtime_minutes", 0) for g in f_games) or 1
-        for g in f_games:
-            w = g.get("playtime_minutes", 0) / ft
-            for genre in GAME_CATALOG.get(g.get("app_id"), {}).get("genres", []):
-                fw[genre] = fw.get(genre, 0) + w
-        fs = set(fw)
-        inter = len(my_genre_set & fs)
-        union = len(my_genre_set | fs)
-        return inter / union if union else 0
-
-    ranked = sorted(friends_games.items(), key=lambda kv: -_jaccard(kv[1]))[:5]
+    # 코사인 유사도 계산 후 상위 5명
+    my_vec = _genre_vector(owned_games, GAME_CATALOG)
+    ranked = sorted(
+        friends_games.items(),
+        key=lambda kv: -_cosine_sim(my_vec, _genre_vector(kv[1], GAME_CATALOG))
+    )[:5]
 
     # ── 장르 레이더 차트 (나 + 친구들)
     all_genres = sorted(
@@ -1191,21 +1199,11 @@ def _render_friends_sidebar():
 
         user_app_ids = {g["app_id"] for g in owned_games}
 
-        def _jaccard_sim(f_games):
-            f_genre_w: dict[str, float] = Counter()
-            f_total = sum(g.get("playtime_minutes", 0) for g in f_games) or 1
-            for g in f_games:
-                w = g.get("playtime_minutes", 0) / f_total
-                for genre in GAME_CATALOG.get(g["app_id"], {}).get("genres", []):
-                    f_genre_w[genre] += w
-            f_genre_set = set(f_genre_w)
-            inter = len(user_genre_set & f_genre_set)
-            union = len(user_genre_set | f_genre_set)
-            return int(inter / union * 100) if union else 0
+        my_vec_sb = _genre_vector(owned_games, GAME_CATALOG)
 
         for fid, f_games in sorted(
             friends_games.items(),
-            key=lambda kv: -_jaccard_sim(kv[1]),
+            key=lambda kv: -_cosine_sim(my_vec_sb, _genre_vector(kv[1], GAME_CATALOG)),
         ):
             profile  = friends_profiles.get(fid, {})
             username = profile.get("username", f"User_{fid[-4:]}")
@@ -1220,10 +1218,9 @@ def _render_friends_sidebar():
                     f_genre_w[genre] += w
             f_genre_set = set(f_genre_w)
 
-            # Jaccard 유사도
-            inter = len(user_genre_set & f_genre_set)
-            union = len(user_genre_set | f_genre_set)
-            sim   = int(inter / union * 100) if union else 0
+            # 코사인 유사도 (플레이타임 가중)
+            f_vec_sb = _genre_vector(f_games, GAME_CATALOG)
+            sim      = int(_cosine_sim(my_vec_sb, f_vec_sb) * 100)
 
             # 공통 장르 (친구 플레이타임 기준 정렬)
             common_genres = sorted(
