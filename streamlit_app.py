@@ -579,26 +579,7 @@ def _build_lightgcn_graph(steam_id, owned_games, rec_games):
 
     fig = go.Figure()
 
-    # ── 엣지: 타 유저(희미) / 내 보유(중간) / 내 추천(선명) 3개 trace로 묶기
-    ex_other: list = []   # 타 유저 엣지
-    ex_owned: list = []   # 내 보유 게임 엣지
-    ex_rec:   list = []   # 내 추천 게임 엣지
-
-    for uid, games in all_interactions.items():
-        ux, uy = user_pos[uid]
-        is_me = uid == steam_id
-        for aid in games:
-            gx, gy = game_pos[aid]
-            seg = [ux, gx, None], [uy, gy, None]
-            if not is_me:
-                ex_other[0:0] = []; ex_other.extend(seg[0]); ex_other  # rebuild below
-            else:
-                if aid in rec_ids:
-                    ex_rec.extend(seg[0]) or None
-                else:
-                    ex_owned.extend(seg[0]) or None
-
-    # 재구성 (x, y 분리)
+    # ── 엣지: 타 유저(희미) / 내 보유(파랑) / 내 추천(빨강) 3개 trace로 묶기
     def _edge_xy(uid_list, game_map, is_me_flag, category):
         xs, ys = [], []
         for uid, games in all_interactions.items():
