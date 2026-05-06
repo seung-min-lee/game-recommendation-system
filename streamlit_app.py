@@ -1586,12 +1586,8 @@ def page_dashboard():
     _render_stats_tab()
 
     st.markdown("<br>", unsafe_allow_html=True)
-    _, btn_col1, btn_col2, _ = st.columns([1, 1, 1, 1])
-    with btn_col1:
-        if st.button("🎯 장르별 탐색", key="go_genre", use_container_width=True):
-            st.session_state.page = "genre_explorer"
-            st.rerun()
-    with btn_col2:
+    _, btn_col, _ = st.columns([1, 1, 1])
+    with btn_col:
         if st.button("맞춤 추천작 보기 ➔", key="go_recs", use_container_width=True):
             st.session_state.page = "recommendations"
             st.rerun()
@@ -1604,7 +1600,7 @@ def page_recommendations():
     recs     = st.session_state.recs or {}
     username = (st.session_state.user or {}).get("username", "Unknown")
 
-    hc1, hc2, hc3 = st.columns([6, 1, 1])
+    hc1, hc2 = st.columns([8, 1])
     with hc1:
         st.markdown(f"""
         <div style="border-bottom:2px solid #2f2f2f;padding-bottom:20px;margin-bottom:40px;">
@@ -1613,11 +1609,6 @@ def page_recommendations():
         </div>
         """, unsafe_allow_html=True)
     with hc2:
-        st.markdown("<br>", unsafe_allow_html=True)
-        if st.button("🎯 장르 탐색", key="go_genre_from_rec"):
-            st.session_state.page = "genre_explorer"
-            st.rerun()
-    with hc3:
         st.markdown("<br>", unsafe_allow_html=True)
         if st.button("← 통계", key="back_btn"):
             st.session_state.page = "dashboard"
@@ -1653,7 +1644,7 @@ def page_recommendations():
             g["price_info"] = cached_prices.get(g.get("app_id"))
         return games
 
-    tab1, tab2, tab3, tab4 = st.tabs(["🎮 장르 기반 추천", "👥 유사 유저 기반 추천", "💎 숨겨진 명작", "🕸️ LightGCN"])
+    tab1, tab2, tab3, tab4, tab5 = st.tabs(["🎮 장르 기반 추천", "👥 유사 유저 기반 추천", "💎 숨겨진 명작", "🕸️ LightGCN", "🎯 장르별 탐색"])
 
     with tab1:
         st.markdown('<h2 style="font-size:1.5rem;padding-left:10px;border-left:4px solid #E50914;">🎮 장르 기반 추천</h2>', unsafe_allow_html=True)
@@ -1693,6 +1684,120 @@ def page_recommendations():
         _render_carousel(graph_games)
         _show_reviews_panel(graph_games, "graph")
 
+    with tab5:
+        st.markdown('<h2 style="font-size:1.5rem;padding-left:10px;border-left:4px solid #E50914;">🎯 장르별 인기 게임 탐색</h2>', unsafe_allow_html=True)
+        _render_genre_explorer_inline()
+
+
+
+# ── 장르 탐색 공통 렌더러 (탭 내 인라인용) ─────────────────────────────────────
+def _render_genre_explorer_inline():
+    from data.popular_games import POPULAR_GAMES, ALL_GENRES
+
+    selected = st.pills(
+        "장르 선택 (복수 선택 가능 · 선택한 장르를 모두 포함한 게임만 표시)",
+        ALL_GENRES,
+        selection_mode="multi",
+        key="genre_pills_inline",
+    )
+
+    st.markdown("<br>", unsafe_allow_html=True)
+
+    if not selected:
+        st.markdown('<p style="color:#737373;font-size:0.9rem;">장르를 선택하면 해당 조건의 게임만 표시됩니다. 현재는 전체 인기작을 보여줍니다.</p>', unsafe_allow_html=True)
+        matched = sorted(POPULAR_GAMES.values(), key=lambda g: g["rank"])[:24]
+    else:
+        selected_set = set(selected)
+        matched = sorted(
+            [g for g in POPULAR_GAMES.values() if selected_set.issubset(set(g["genres"]))],
+            key=lambda g: g["rank"],
+        )
+
+    if selected and not matched:
+        st.markdown(f"""
+        <div style="background:#1a1a1a;border-radius:10px;padding:32px;text-align:center;">
+            <div style="font-size:2rem;margin-bottom:12px;">🔍</div>
+            <p style="color:#b3b3b3;">선택한 장르 <b style="color:#fff;">{'  +  '.join(selected)}</b>를 모두 포함하는 게임이 없습니다.<br>
+            <span style="color:#737373;font-size:0.85rem;">장르 조합을 바꿔보세요.</span></p>
+        </div>
+        """, unsafe_allow_html=True)
+        return
+
+    tag_html = " ".join(
+        f'<span style="background:#E50914;color:#fff;border-radius:4px;padding:2px 8px;font-size:0.8rem;font-weight:600;">{g}</span>'
+        for g in (selected or ["전체"])
+    )
+    st.markdown(
+        f'<div style="margin-bottom:16px;">{tag_html} '
+        f'<span style="color:#737373;font-size:0.85rem;margin-left:6px;">— {len(matched[:24])}개 게임</span></div>',
+        unsafe_allow_html=True,
+    )
+
+    price_key = "_genre_price_cache"
+    if price_key not in st.session_state:
+        st.session_state[price_key] = {}
+    cached: dict = st.session_state[price_key]
+    uncached_ids = [
+        int(g["store_url"].split("/app/")[1].split("/")[0])
+        for g in matched[:24]
+        if int(g["store_url"].split("/app/")[1].split("/")[0]) not in cached
+    ]
+    if uncached_ids:
+        with st.spinner("Steam 가격 정보 확인 중..."):
+            fetched = steam.get_price_info_batch(list(set(uncached_ids)))
+            cached.update(fetched)
+            for aid in uncached_ids:
+                cached.setdefault(aid, None)
+        st.session_state[price_key] = cached
+
+    display = matched[:24]
+    cols_per_row = 4
+    for row_start in range(0, len(display), cols_per_row):
+        row_games = display[row_start:row_start + cols_per_row]
+        cols = st.columns(cols_per_row)
+        for col, game in zip(cols, row_games):
+            app_id = int(game["store_url"].split("/app/")[1].split("/")[0])
+            price_info = cached.get(app_id)
+            if price_info:
+                if price_info.get("is_free"):
+                    price_str, price_clr = "무료", "#46d369"
+                elif price_info.get("discount_percent", 0) > 0:
+                    price_str = (f"<s style='color:#737373;font-size:0.75rem;'>{price_info['original']}</s> "
+                                 f"<b style='color:#46d369;'>{price_info['final']}</b> "
+                                 f"<span style='background:#4c6b22;color:#a4d007;border-radius:3px;padding:1px 5px;font-size:0.72rem;'>-{price_info['discount_percent']}%</span>")
+                    price_clr = "#46d369"
+                else:
+                    price_str, price_clr = price_info.get("final", ""), "#b3b3b3"
+            else:
+                price_str, price_clr = "", "#555"
+
+            genre_tags = " ".join(
+                f'<span style="background:#2a2a2a;color:{"#E50914" if g in (selected or []) else "#666"};'
+                f'border-radius:3px;padding:1px 5px;font-size:0.65rem;">{g}</span>'
+                for g in game["genres"][:3]
+            )
+            rank_badge = f'<span style="background:#333;color:#b3b3b3;border-radius:3px;padding:1px 6px;font-size:0.68rem;">#{game["rank"]}</span>'
+            with col:
+                st.markdown(f"""
+                <a href="{game['store_url']}" target="_blank" style="text-decoration:none;">
+                    <div style="background:#1a1a1a;border-radius:10px;overflow:hidden;
+                                margin-bottom:16px;border:1px solid #2a2a2a;"
+                         onmouseover="this.style.borderColor='#E50914'"
+                         onmouseout="this.style.borderColor='#2a2a2a'">
+                        <div style="position:relative;">
+                            <img src="{game['header_image']}" style="width:100%;display:block;">
+                            <div style="position:absolute;top:6px;left:6px;">{rank_badge}</div>
+                        </div>
+                        <div style="padding:10px 12px;">
+                            <div style="font-weight:700;font-size:0.88rem;color:#fff;
+                                        white-space:nowrap;overflow:hidden;text-overflow:ellipsis;
+                                        margin-bottom:6px;">{game['name']}</div>
+                            <div style="margin-bottom:6px;">{genre_tags}</div>
+                            <div style="font-size:0.82rem;color:{price_clr};">{price_str}</div>
+                        </div>
+                    </div>
+                </a>
+                """, unsafe_allow_html=True)
 
 
 # ── 페이지: 장르 탐색 ──────────────────────────────────────────────────────────
