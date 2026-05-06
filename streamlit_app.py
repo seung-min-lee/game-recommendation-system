@@ -807,7 +807,7 @@ def _render_friend_comparison(fid: str):
 
     # ── 레이더 차트 (장르 비교)
     all_genres = sorted(
-        (my_gs | f_gs),
+        (set(my_gh) | set(f_gh)),
         key=lambda g: my_gh.get(g, 0) + f_gh.get(g, 0), reverse=True
     )[:10]
 
