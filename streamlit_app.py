@@ -191,7 +191,8 @@ def _next_steam_sale() -> tuple[str, int]:
 
 def _render_carousel(games: list):
     html = _carousel_html(games)
-    components.html(html, height=360, scrolling=False)
+    rows = max(1, (len(games) + 3) // 4)
+    components.html(html, height=rows * 330 + 40, scrolling=False)
 
 
 def _review_card_html(r: dict, idx: int) -> str:
@@ -530,28 +531,29 @@ def _carousel_html(games: list) -> str:
         cards += f"""
         <div onclick="window.open('{store_url}','_blank')" style="
             background:#181818; border-radius:8px; overflow:hidden;
-            cursor:pointer; width:240px; flex:0 0 auto; scroll-snap-align:start;
+            cursor:pointer; box-sizing:border-box;
+            width:calc(25% - 12px); min-width:180px;
             transition:transform 0.3s,box-shadow 0.3s;
-            " onmouseover="this.style.transform='scale(1.06)';this.style.boxShadow='0 15px 30px rgba(0,0,0,0.7)';this.style.zIndex='10'"
+            " onmouseover="this.style.transform='scale(1.04)';this.style.boxShadow='0 12px 28px rgba(0,0,0,0.7)';this.style.zIndex='10'"
                onmouseout="this.style.transform='scale(1)';this.style.boxShadow='none';this.style.zIndex='1'">
-            <img src="{img}" style="width:100%;height:135px;object-fit:cover;"
-                 onerror="this.src='https://via.placeholder.com/240x135/181818/555?text=No+Image'">
+            <img src="{img}" style="width:100%;height:130px;object-fit:cover;"
+                 onerror="this.src='https://via.placeholder.com/240x130/181818/555?text=No+Image'">
             <div style="padding:12px;">
-                <p style="color:#fff;font-size:0.93rem;font-weight:bold;margin:0 0 6px;
+                <p style="color:#fff;font-size:0.9rem;font-weight:bold;margin:0 0 6px;
                            white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">{name}</p>
                 <div style="display:flex;justify-content:space-between;align-items:center;">
-                    <span style="color:#46d369;font-weight:bold;font-size:0.88rem;">{match_pct}% 일치</span>
+                    <span style="color:#46d369;font-weight:bold;font-size:0.85rem;">{match_pct}% 일치</span>
                     {mc_html}
                 </div>
                 {price_html}
-                <p style="color:#E50914;font-size:0.78rem;margin:5px 0 0;font-weight:bold;">스토어 이동 ➔</p>
+                <p style="color:#E50914;font-size:0.75rem;margin:5px 0 0;font-weight:bold;">스토어 이동 ➔</p>
                 {reason_html}
             </div>
         </div>"""
+    n = len(games)
+    height = 320 * ((n + 3) // 4) + 40
     return f"""
-    <div style="display:flex;overflow-x:auto;scroll-snap-type:x mandatory;
-                gap:16px;padding:10px 0 20px;scrollbar-width:thin;
-                scrollbar-color:#333 #141414;">
+    <div style="display:flex;flex-wrap:wrap;gap:16px;padding:10px 0 20px;">
         {cards}
     </div>"""
 
