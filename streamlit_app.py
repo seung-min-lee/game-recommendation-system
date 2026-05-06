@@ -113,6 +113,7 @@ for key, default in [
     ("friends_games", {}),
     ("friends_profiles", {}),
     ("friends_count", 0),
+    ("selected_friend", None),
 ]:
     if key not in st.session_state:
         st.session_state[key] = default
@@ -713,6 +714,192 @@ def _build_lightgcn_graph(steam_id, owned_games, rec_games):
     return fig
 
 
+# ── 친구 1:1 비교 패널 ───────────────────────────────────────────────────────
+def _render_friend_comparison(fid: str):
+    from data.dummy_data import GAME_CATALOG
+
+    owned_games      = st.session_state.get("owned_games", [])
+    friends_games    = st.session_state.get("friends_games", {})
+    friends_profiles = st.session_state.get("friends_profiles", {})
+    username         = (st.session_state.get("user") or {}).get("username", "나")
+
+    f_games  = friends_games.get(fid, [])
+    profile  = friends_profiles.get(fid, {})
+    fname    = profile.get("username", f"User_{fid[-4:]}")
+    favatar  = profile.get("avatar_url", "")
+
+    def _genre_hours(games):
+        res: dict[str, float] = {}
+        for g in games:
+            hrs = g.get("playtime_minutes", 0) / 60
+            for genre in GAME_CATALOG.get(g.get("app_id"), {}).get("genres", []):
+                res[genre] = res.get(genre, 0) + hrs
+        return res
+
+    my_gh  = _genre_hours(owned_games)
+    f_gh   = _genre_hours(f_games)
+    my_total = sum(g.get("playtime_minutes", 0) for g in owned_games) / 60
+    f_total  = sum(g.get("playtime_minutes", 0) for g in f_games) / 60
+
+    my_ids = {g["app_id"] for g in owned_games}
+    f_ids  = {g["app_id"] for g in f_games}
+    common_ids = my_ids & f_ids
+
+    # Jaccard
+    my_gs = set(my_gh); f_gs = set(f_gh)
+    inter = len(my_gs & f_gs); union = len(my_gs | f_gs)
+    sim = int(inter / union * 100) if union else 0
+    sim_clr = "#46d369" if sim >= 70 else "#f5c518" if sim >= 40 else "#b3b3b3"
+
+    # ── 헤더
+    fav_html = f'<img src="{favatar}" style="width:40px;height:40px;border-radius:50%;border:2px solid {sim_clr};margin-right:10px;vertical-align:middle;">' if favatar else "👤 "
+    st.markdown(f"""
+    <div style="background:#1e1e1e;border-radius:12px;padding:18px 22px;margin-bottom:20px;
+                border:1px solid #2f2f2f;display:flex;align-items:center;gap:16px;">
+        <div style="font-size:1.1rem;font-weight:700;color:#fff;">👤 {username}</div>
+        <div style="color:#555;font-size:1.4rem;">vs</div>
+        <div style="display:flex;align-items:center;">{fav_html}
+            <span style="font-size:1.1rem;font-weight:700;color:#fff;">{fname}</span>
+        </div>
+        <div style="margin-left:auto;text-align:right;">
+            <div style="font-size:0.75rem;color:#737373;">장르 유사도</div>
+            <div style="font-size:1.6rem;font-weight:800;color:{sim_clr};">{sim}%</div>
+        </div>
+    </div>
+    """, unsafe_allow_html=True)
+
+    # ── 요약 카드 4개
+    c1, c2, c3, c4 = st.columns(4)
+    cards = [
+        ("내 총 플레이타임",   f"{my_total:,.0f}h",    "#E50914"),
+        (f"{fname} 플레이타임", f"{f_total:,.0f}h",    "#64A0FF"),
+        ("내 보유 게임",        f"{len(owned_games)}개", "#46d369"),
+        ("공통 보유 게임",      f"{len(common_ids)}개",  sim_clr),
+    ]
+    for col, (title, val, clr) in zip([c1, c2, c3, c4], cards):
+        with col:
+            st.markdown(f"""
+            <div style="background:#1a1a1a;border-radius:10px;padding:14px;text-align:center;
+                        border-top:3px solid {clr};margin-bottom:12px;">
+                <div style="color:#737373;font-size:0.75rem;">{title}</div>
+                <div style="font-size:1.5rem;font-weight:800;color:#fff;">{val}</div>
+            </div>""", unsafe_allow_html=True)
+
+    # ── 레이더 차트 (장르 비교)
+    all_genres = sorted(
+        (my_gs | f_gs),
+        key=lambda g: my_gh.get(g, 0) + f_gh.get(g, 0), reverse=True
+    )[:10]
+
+    def _norm(gh, genres):
+        vals = [gh.get(g, 0) for g in genres]
+        mx = max(vals) or 1
+        return [round(v / mx * 100) for v in vals]
+
+    my_v = _norm(my_gh,  all_genres)
+    f_v  = _norm(f_gh,   all_genres)
+
+    fig_radar = go.Figure()
+    fig_radar.add_trace(go.Scatterpolar(
+        r=my_v + [my_v[0]], theta=all_genres + [all_genres[0]],
+        fill="toself", name=f"👤 {username}",
+        line=dict(color="#E50914", width=2.5),
+        fillcolor="rgba(229,9,20,0.15)",
+    ))
+    fig_radar.add_trace(go.Scatterpolar(
+        r=f_v + [f_v[0]], theta=all_genres + [all_genres[0]],
+        fill="toself", name=fname,
+        line=dict(color="#64A0FF", width=2),
+        fillcolor="rgba(100,160,255,0.12)",
+    ))
+    fig_radar.update_layout(
+        polar=dict(
+            bgcolor="#141414",
+            radialaxis=dict(visible=True, range=[0, 100],
+                            gridcolor="rgba(255,255,255,0.08)",
+                            tickfont=dict(size=8, color="#555"), ticksuffix="%"),
+            angularaxis=dict(gridcolor="rgba(255,255,255,0.1)",
+                             tickfont=dict(size=11, color="#ccc")),
+        ),
+        paper_bgcolor="#141414", font_color="#e5e5e5",
+        height=380, margin=dict(l=50, r=50, t=30, b=30),
+        legend=dict(bgcolor="rgba(20,20,20,0.9)", bordercolor="#333",
+                    borderwidth=1, font=dict(size=11)),
+    )
+
+    # ── 플레이타임 비교 바 차트 (공통 게임 상위 10개)
+    common_game_list = []
+    my_pt  = {g["app_id"]: g.get("playtime_minutes", 0) for g in owned_games}
+    f_pt   = {g["app_id"]: g.get("playtime_minutes", 0) for g in f_games}
+    for aid in sorted(common_ids, key=lambda a: my_pt.get(a, 0) + f_pt.get(a, 0), reverse=True)[:10]:
+        name = GAME_CATALOG.get(aid, {}).get("name", f"Game_{aid}")
+        common_game_list.append({
+            "name": name[:22],
+            "my_h": round(my_pt.get(aid, 0) / 60, 1),
+            "f_h":  round(f_pt.get(aid, 0) / 60, 1),
+        })
+
+    left, right = st.columns([1, 1])
+    with left:
+        st.markdown(f'<h3 style="font-size:1rem;color:#ccc;margin-bottom:8px;">🎯 장르 취향 비교</h3>', unsafe_allow_html=True)
+        st.plotly_chart(fig_radar, use_container_width=True)
+
+    with right:
+        st.markdown(f'<h3 style="font-size:1rem;color:#ccc;margin-bottom:8px;">🎮 공통 게임 플레이타임 비교 (상위 10개)</h3>', unsafe_allow_html=True)
+        if common_game_list:
+            names  = [g["name"] for g in common_game_list]
+            my_hrs = [g["my_h"] for g in common_game_list]
+            f_hrs  = [g["f_h"]  for g in common_game_list]
+            fig_bar = go.Figure()
+            fig_bar.add_trace(go.Bar(
+                name=f"👤 {username}", y=names, x=my_hrs, orientation="h",
+                marker=dict(color="#E50914"), offsetgroup=0,
+                hovertemplate="<b>%{y}</b><br>" + username + ": %{x}h<extra></extra>",
+            ))
+            fig_bar.add_trace(go.Bar(
+                name=fname, y=names, x=f_hrs, orientation="h",
+                marker=dict(color="#64A0FF"), offsetgroup=1,
+                hovertemplate="<b>%{y}</b><br>" + fname + ": %{x}h<extra></extra>",
+            ))
+            fig_bar.update_layout(
+                barmode="group",
+                paper_bgcolor="#141414", plot_bgcolor="#141414",
+                font_color="#b3b3b3", height=380,
+                margin=dict(l=10, r=20, t=10, b=10),
+                xaxis=dict(gridcolor="rgba(255,255,255,0.05)", title="플레이타임 (h)"),
+                yaxis=dict(autorange="reversed", gridcolor="rgba(0,0,0,0)"),
+                legend=dict(bgcolor="rgba(20,20,20,0.9)", bordercolor="#333",
+                            borderwidth=1, font=dict(size=11),
+                            orientation="h", yanchor="bottom", y=1.02, x=0),
+            )
+            st.plotly_chart(fig_bar, use_container_width=True)
+        else:
+            st.markdown('<p style="color:#737373;padding-top:60px;text-align:center;">공통 보유 게임이 없습니다.</p>', unsafe_allow_html=True)
+
+    # ── 공통 게임 목록 (썸네일)
+    if common_ids:
+        st.markdown(f'<h3 style="font-size:1rem;color:#ccc;margin:12px 0 10px;">🔗 공통 보유 게임 ({len(common_ids)}개)</h3>', unsafe_allow_html=True)
+        cols = st.columns(6)
+        for i, aid in enumerate(sorted(common_ids)[:12]):
+            info = GAME_CATALOG.get(aid, {})
+            name = info.get("name", f"Game_{aid}")
+            img  = info.get("header_image", f"https://cdn.akamai.steamstatic.com/steam/apps/{aid}/header.jpg")
+            url  = info.get("store_url", f"https://store.steampowered.com/app/{aid}")
+            with cols[i % 6]:
+                st.markdown(f"""
+                <a href="{url}" target="_blank" style="text-decoration:none;">
+                    <div style="border-radius:6px;overflow:hidden;margin-bottom:8px;
+                                border:1px solid #2f2f2f;transition:border-color 0.2s;"
+                         onmouseover="this.style.borderColor='#E50914'"
+                         onmouseout="this.style.borderColor='#2f2f2f'">
+                        <img src="{img}" style="width:100%;display:block;">
+                        <div style="padding:4px 6px;background:#1a1a1a;font-size:0.7rem;
+                                    color:#b3b3b3;white-space:nowrap;overflow:hidden;
+                                    text-overflow:ellipsis;">{name}</div>
+                    </div>
+                </a>""", unsafe_allow_html=True)
+
+
 # ── 나 & 친구 통계 탭 ────────────────────────────────────────────────────────
 def _render_stats_tab():
     import math
@@ -1064,8 +1251,10 @@ def _render_friends_sidebar():
                 for g in common_genres
             )
 
+            is_selected = st.session_state.get("selected_friend") == fid
+            card_bg = "#252525" if is_selected else "#1a1a1a"
             st.markdown(f"""
-            <div style="margin-bottom:14px;padding:12px;background:#1a1a1a;border-radius:8px;
+            <div style="margin-bottom:6px;padding:12px;background:{card_bg};border-radius:8px;
                         border-left:3px solid {clr};">
                 <div style="display:flex;align-items:center;margin-bottom:6px;">
                     {av_html}<span style="font-weight:bold;font-size:0.86rem;color:#fff;
@@ -1083,6 +1272,13 @@ def _render_friends_sidebar():
                 <div>{tags_html}</div>
             </div>
             """, unsafe_allow_html=True)
+            btn_label = "✅ 비교 중" if is_selected else "📊 통계보기"
+            if st.button(btn_label, key=f"stat_btn_{fid}", use_container_width=True):
+                if is_selected:
+                    st.session_state.selected_friend = None
+                else:
+                    st.session_state.selected_friend = fid
+                st.rerun()
 
 
 # ── 페이지: 로그인 ────────────────────────────────────────────────────────────
@@ -1357,6 +1553,21 @@ def page_dashboard():
             st.plotly_chart(fig2, use_container_width=True)
 
     st.markdown("<br>", unsafe_allow_html=True)
+
+    # ── 친구 1:1 비교 패널 (사이드바에서 친구 선택 시 표시)
+    selected_fid = st.session_state.get("selected_friend")
+    friends_games = st.session_state.get("friends_games", {})
+    if selected_fid and selected_fid in friends_games:
+        fname = st.session_state.get("friends_profiles", {}).get(
+            selected_fid, {}
+        ).get("username", f"User_{selected_fid[-4:]}")
+        st.markdown("---")
+        st.markdown(
+            f'<h2 style="font-size:1.4rem;padding-left:10px;border-left:4px solid #64A0FF;margin-bottom:16px;">'
+            f'📊 나 vs {fname} 비교</h2>',
+            unsafe_allow_html=True,
+        )
+        _render_friend_comparison(selected_fid)
 
     # ── 나 & 친구 통계 (로그인 직후 바로 노출)
     st.markdown("---")
