@@ -539,6 +539,7 @@ def _carousel_html(games: list) -> str:
 
 # ── LightGCN 그래프 ────────────────────────────────────────────────────────────
 def _build_lightgcn_graph(steam_id, owned_games, rec_games):
+    import math
     from data.dummy_data import DUMMY_OWNED_GAMES, GAME_CATALOG
 
     all_interactions = {}
@@ -551,89 +552,181 @@ def _build_lightgcn_graph(steam_id, owned_games, rec_games):
     owned_ids = {g["app_id"] for g in owned_games}
     rec_ids   = {g["app_id"] for g in rec_games}
 
-    n_u, n_g = len(users), len(game_ids)
-    user_pos = {u: (0.0, i / max(n_u - 1, 1)) for i, u in enumerate(users)}
-    game_pos = {g: (1.0, i / max(n_g - 1, 1)) for i, g in enumerate(game_ids)}
+    # ── 유저: 왼쪽 세로 배치, 내 유저는 중앙 고정
+    n_u = len(users)
+    me_idx = users.index(steam_id) if steam_id in users else 0
+    user_pos: dict = {}
+    others = [u for u in users if u != steam_id]
+    for i, u in enumerate(others):
+        y = (i + 1) / (len(others) + 1)
+        user_pos[u] = (-1.0, y)
+    user_pos[steam_id] = (-1.0, 0.5)
+
+    # ── 게임: 오른쪽 원형 배치 (장르별 클러스터)
+    genre_order: dict[str, int] = {}
+    for aid in game_ids:
+        g = GAME_CATALOG.get(aid, {}).get("genres", ["기타"])
+        genre = g[0] if g else "기타"
+        if genre not in genre_order:
+            genre_order[genre] = len(genre_order)
+
+    n_g = len(game_ids)
+    game_pos: dict = {}
+    for i, aid in enumerate(game_ids):
+        angle = 2 * math.pi * i / max(n_g, 1) - math.pi / 2
+        r = 0.72
+        game_pos[aid] = (1.0 + r * math.cos(angle), 0.5 + r * math.sin(angle) * 0.85)
 
     fig = go.Figure()
 
+    # ── 엣지: 타 유저(희미) / 내 보유(중간) / 내 추천(선명) 3개 trace로 묶기
+    ex_other: list = []   # 타 유저 엣지
+    ex_owned: list = []   # 내 보유 게임 엣지
+    ex_rec:   list = []   # 내 추천 게임 엣지
+
     for uid, games in all_interactions.items():
         ux, uy = user_pos[uid]
+        is_me = uid == steam_id
         for aid in games:
             gx, gy = game_pos[aid]
-            is_me  = uid == steam_id
-            is_rec = aid in rec_ids
-            color  = "rgba(229,9,20,0.7)"   if (is_me and is_rec)  else \
-                     "rgba(229,9,20,0.3)"   if is_me               else \
-                     "rgba(255,255,255,0.08)"
-            width  = 2.5 if is_me else 0.6
-            fig.add_trace(go.Scatter(
-                x=[ux, gx, None], y=[uy, gy, None],
-                mode="lines", line=dict(width=width, color=color),
-                hoverinfo="none", showlegend=False,
-            ))
+            seg = [ux, gx, None], [uy, gy, None]
+            if not is_me:
+                ex_other[0:0] = []; ex_other.extend(seg[0]); ex_other  # rebuild below
+            else:
+                if aid in rec_ids:
+                    ex_rec.extend(seg[0]) or None
+                else:
+                    ex_owned.extend(seg[0]) or None
 
+    # 재구성 (x, y 분리)
+    def _edge_xy(uid_list, game_map, is_me_flag, category):
+        xs, ys = [], []
+        for uid, games in all_interactions.items():
+            if (uid == steam_id) != is_me_flag:
+                continue
+            ux, uy = user_pos[uid]
+            for aid in games:
+                if category == "rec"   and aid not in rec_ids:   continue
+                if category == "owned" and aid in rec_ids:        continue
+                gx, gy = game_pos[aid]
+                xs += [ux, gx, None]
+                ys += [uy, gy, None]
+        return xs, ys
+
+    other_ex, other_ey = _edge_xy(users, game_pos, False, "all")
+    owned_ex, owned_ey = _edge_xy(users, game_pos, True,  "owned")
+    rec_ex,   rec_ey   = _edge_xy(users, game_pos, True,  "rec")
+
+    fig.add_trace(go.Scatter(
+        x=other_ex, y=other_ey, mode="lines",
+        line=dict(width=0.4, color="rgba(255,255,255,0.05)"),
+        hoverinfo="none", showlegend=False,
+    ))
+    fig.add_trace(go.Scatter(
+        x=owned_ex, y=owned_ey, mode="lines",
+        line=dict(width=1.4, color="rgba(100,160,255,0.45)"),
+        hoverinfo="none", showlegend=False,
+    ))
+    fig.add_trace(go.Scatter(
+        x=rec_ex, y=rec_ey, mode="lines",
+        line=dict(width=2.2, color="rgba(229,9,20,0.75)"),
+        hoverinfo="none", showlegend=False,
+    ))
+
+    # ── 유저 노드
     for uid in users:
         ux, uy = user_pos[uid]
         is_me  = uid == steam_id
-        label  = "👤 나" if is_me else f"User_{uid[-4:]}"
+        label  = "👤 나" if is_me else f"U_{uid[-4:]}"
         fig.add_trace(go.Scatter(
             x=[ux], y=[uy], mode="markers+text",
-            marker=dict(size=22 if is_me else 14,
-                        color="#E50914" if is_me else "#555555",
-                        line=dict(width=2, color="white")),
-            text=[label], textposition="middle left",
-            textfont=dict(size=12 if is_me else 10, color="white"),
-            hovertemplate=f"<b>{label}</b><br>게임 수: {len(all_interactions[uid])}<extra></extra>",
+            marker=dict(
+                size=26 if is_me else 13,
+                color="#E50914" if is_me else "#4a4a5a",
+                symbol="circle",
+                line=dict(width=2 if is_me else 1,
+                          color="white" if is_me else "#777"),
+            ),
+            text=[label],
+            textposition="middle left",
+            textfont=dict(size=13 if is_me else 9,
+                          color="white" if is_me else "#888"),
+            hovertemplate=(
+                f"<b>{label}</b><br>"
+                f"게임 수: {len(all_interactions[uid])}<extra></extra>"
+            ),
             showlegend=False,
         ))
 
+    # ── 게임 노드
     for aid in game_ids:
         gx, gy = game_pos[aid]
         name   = GAME_CATALOG.get(aid, {}).get("name", f"Game_{aid}")
         genres = ", ".join(GAME_CATALOG.get(aid, {}).get("genres", [])[:2])
+        short  = name[:14] + ("…" if len(name) > 14 else "")
         if aid in rec_ids:
-            color, symbol, size, label = "#E50914", "star", 16, f"⭐ {name[:15]}"
+            clr, sym, sz = "#FF3B3B", "star", 18
+            label = f"⭐ {short}"
+            tfont = dict(size=10, color="#FF6B6B")
         elif aid in owned_ids:
-            color, symbol, size, label = "#ffffff", "square", 13, f"🎮 {name[:15]}"
+            clr, sym, sz = "#64A0FF", "square", 14
+            label = f"🎮 {short}"
+            tfont = dict(size=9, color="#90C0FF")
         else:
-            color, symbol, size, label = "#444444", "circle", 9, name[:15]
+            clr, sym, sz = "#3a3a4a", "circle", 7
+            label = ""
+            tfont = dict(size=8, color="#555")
         fig.add_trace(go.Scatter(
-            x=[gx], y=[gy], mode="markers+text",
-            marker=dict(size=size, color=color, symbol=symbol,
-                        line=dict(width=1, color="#333")),
-            text=[label], textposition="middle right",
-            textfont=dict(size=9, color="#b3b3b3"),
+            x=[gx], y=[gy],
+            mode="markers+text" if label else "markers",
+            marker=dict(size=sz, color=clr, symbol=sym,
+                        line=dict(width=1.2 if aid in rec_ids | owned_ids else 0,
+                                  color="#ffffff" if aid in rec_ids else "#3a5a80")),
+            text=[label] if label else [],
+            textposition="top center",
+            textfont=tfont,
             hovertemplate=f"<b>{name}</b><br>{genres}<extra></extra>",
             showlegend=False,
         ))
 
-    for label, color, symbol in [
+    # ── 범례 전용 trace
+    for lbl, clr, sym in [
         ("현재 유저",    "#E50914", "circle"),
-        ("다른 유저",    "#555555", "circle"),
-        ("추천 게임 ⭐", "#E50914", "star"),
-        ("보유 게임",    "#ffffff", "square"),
-        ("기타 게임",    "#444444", "circle"),
+        ("다른 유저",    "#4a4a5a", "circle"),
+        ("추천 게임 ⭐", "#FF3B3B", "star"),
+        ("보유 게임",    "#64A0FF", "square"),
+        ("기타 게임",    "#3a3a4a", "circle"),
     ]:
         fig.add_trace(go.Scatter(
             x=[None], y=[None], mode="markers",
-            marker=dict(size=10, color=color, symbol=symbol),
-            name=label, showlegend=True,
+            marker=dict(size=10, color=clr, symbol=sym,
+                        line=dict(width=1, color="white")),
+            name=lbl, showlegend=True,
         ))
 
     fig.update_layout(
-        paper_bgcolor="#141414", plot_bgcolor="#181818",
-        font_color="#e5e5e5", height=500,
-        margin=dict(l=160, r=200, t=20, b=20),
-        xaxis=dict(showgrid=False, zeroline=False, showticklabels=False, range=[-0.35, 1.35]),
-        yaxis=dict(showgrid=False, zeroline=False, showticklabels=False),
-        legend=dict(bgcolor="#181818", bordercolor="#2f2f2f", borderwidth=1,
-                    font=dict(color="white", size=11)),
+        paper_bgcolor="#0e0e0e",
+        plot_bgcolor="#0e0e0e",
+        font_color="#e5e5e5",
+        height=620,
+        margin=dict(l=140, r=60, t=50, b=30),
+        xaxis=dict(showgrid=False, zeroline=False, showticklabels=False,
+                   range=[-1.5, 2.1]),
+        yaxis=dict(showgrid=False, zeroline=False, showticklabels=False,
+                   range=[-0.25, 1.25], scaleanchor="x", scaleratio=1),
+        legend=dict(
+            x=0.01, y=0.99, xanchor="left", yanchor="top",
+            bgcolor="rgba(20,20,20,0.85)",
+            bordercolor="#333", borderwidth=1,
+            font=dict(color="white", size=11),
+        ),
         annotations=[
-            dict(x=0.0, y=1.04, xref="paper", yref="paper",
-                 text="<b>유저</b>", showarrow=False, font=dict(size=13, color="#b3b3b3")),
-            dict(x=1.0, y=1.04, xref="paper", yref="paper",
-                 text="<b>게임</b>", showarrow=False, font=dict(size=13, color="#b3b3b3")),
+            dict(x=-1.0, y=1.12, xref="x", yref="y",
+                 text="<b>유저 노드</b>", showarrow=False,
+                 font=dict(size=12, color="#b3b3b3")),
+            dict(x=1.0, y=1.12, xref="x", yref="y",
+                 text="<b>게임 노드</b>", showarrow=False,
+                 font=dict(size=12, color="#b3b3b3")),
         ],
     )
     return fig
@@ -683,9 +776,21 @@ def _render_friends_sidebar():
 
         user_app_ids = {g["app_id"] for g in owned_games}
 
+        def _jaccard_sim(f_games):
+            f_genre_w: dict[str, float] = Counter()
+            f_total = sum(g.get("playtime_minutes", 0) for g in f_games) or 1
+            for g in f_games:
+                w = g.get("playtime_minutes", 0) / f_total
+                for genre in GAME_CATALOG.get(g["app_id"], {}).get("genres", []):
+                    f_genre_w[genre] += w
+            f_genre_set = set(f_genre_w)
+            inter = len(user_genre_set & f_genre_set)
+            union = len(user_genre_set | f_genre_set)
+            return int(inter / union * 100) if union else 0
+
         for fid, f_games in sorted(
             friends_games.items(),
-            key=lambda kv: -len(kv[1]),
+            key=lambda kv: -_jaccard_sim(kv[1]),
         ):
             profile  = friends_profiles.get(fid, {})
             username = profile.get("username", f"User_{fid[-4:]}")

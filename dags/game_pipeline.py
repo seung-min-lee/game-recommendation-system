@@ -154,4 +154,6 @@ with DAG(
     t4 = PythonOperator(task_id="build_gold_recommendations", python_callable=build_gold_recommendations)
 
     # ── 실행 순서 ─────────────────────────────────────────────
-    [t1, t2] >> t3 >> t4
+    # t1, t2는 병렬 실행 (Steam API 메타데이터 + 플레이 기록 동시 수집)
+    # t3, t4는 순차 실행 (Bronze → Silver → Gold)
+    [t1, t2] >> t3 >> t4 
