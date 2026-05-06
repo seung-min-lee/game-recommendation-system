@@ -1733,13 +1733,15 @@ def _render_genre_explorer_inline():
         unsafe_allow_html=True,
     )
 
+    # popular_games 데이터 → carousel 형식으로 변환
     price_key = "_genre_price_cache"
     if price_key not in st.session_state:
         st.session_state[price_key] = {}
     cached: dict = st.session_state[price_key]
+    display_raw = matched[:24]
     uncached_ids = [
         int(g["store_url"].split("/app/")[1].split("/")[0])
-        for g in matched[:24]
+        for g in display_raw
         if int(g["store_url"].split("/app/")[1].split("/")[0]) not in cached
     ]
     if uncached_ids:
@@ -1750,54 +1752,24 @@ def _render_genre_explorer_inline():
                 cached.setdefault(aid, None)
         st.session_state[price_key] = cached
 
-    display = matched[:24]
-    cols_per_row = 4
-    for row_start in range(0, len(display), cols_per_row):
-        row_games = display[row_start:row_start + cols_per_row]
-        cols = st.columns(cols_per_row)
-        for col, game in zip(cols, row_games):
-            app_id = int(game["store_url"].split("/app/")[1].split("/")[0])
-            price_info = cached.get(app_id)
-            if price_info:
-                if price_info.get("is_free"):
-                    price_str, price_clr = "무료", "#46d369"
-                elif price_info.get("discount_percent", 0) > 0:
-                    price_str = (f"<s style='color:#737373;font-size:0.75rem;'>{price_info['original']}</s> "
-                                 f"<b style='color:#46d369;'>{price_info['final']}</b> "
-                                 f"<span style='background:#4c6b22;color:#a4d007;border-radius:3px;padding:1px 5px;font-size:0.72rem;'>-{price_info['discount_percent']}%</span>")
-                    price_clr = "#46d369"
-                else:
-                    price_str, price_clr = price_info.get("final", ""), "#b3b3b3"
-            else:
-                price_str, price_clr = "", "#555"
+    carousel_games = [
+        {
+            "app_id":       int(g["store_url"].split("/app/")[1].split("/")[0]),
+            "name":         g["name"],
+            "header_image": g["header_image"],
+            "store_url":    g["store_url"],
+            "genres":       g["genres"],
+            "match_percent": 100 - g["rank"],   # 인기 순위를 역산해 일치도 표시
+            "metacritic":   None,
+            "reason":       f"인기 순위 #{g['rank']} · {', '.join(g['genres'][:2])}",
+            "price_info":   cached.get(int(g["store_url"].split("/app/")[1].split("/")[0])),
+        }
+        for g in display_raw
+    ]
 
-            genre_tags = " ".join(
-                f'<span style="background:#2a2a2a;color:{"#E50914" if g in (selected or []) else "#666"};'
-                f'border-radius:3px;padding:1px 5px;font-size:0.65rem;">{g}</span>'
-                for g in game["genres"][:3]
-            )
-            rank_badge = f'<span style="background:#333;color:#b3b3b3;border-radius:3px;padding:1px 6px;font-size:0.68rem;">#{game["rank"]}</span>'
-            with col:
-                st.markdown(f"""
-                <a href="{game['store_url']}" target="_blank" style="text-decoration:none;">
-                    <div style="background:#1a1a1a;border-radius:10px;overflow:hidden;
-                                margin-bottom:16px;border:1px solid #2a2a2a;"
-                         onmouseover="this.style.borderColor='#E50914'"
-                         onmouseout="this.style.borderColor='#2a2a2a'">
-                        <div style="position:relative;">
-                            <img src="{game['header_image']}" style="width:100%;display:block;">
-                            <div style="position:absolute;top:6px;left:6px;">{rank_badge}</div>
-                        </div>
-                        <div style="padding:10px 12px;">
-                            <div style="font-weight:700;font-size:0.88rem;color:#fff;
-                                        white-space:nowrap;overflow:hidden;text-overflow:ellipsis;
-                                        margin-bottom:6px;">{game['name']}</div>
-                            <div style="margin-bottom:6px;">{genre_tags}</div>
-                            <div style="font-size:0.82rem;color:{price_clr};">{price_str}</div>
-                        </div>
-                    </div>
-                </a>
-                """, unsafe_allow_html=True)
+    _render_carousel(carousel_games)
+    st.markdown("---")
+    _show_reviews_panel(carousel_games, "genre_explore")
 
 
 # ── 페이지: 장르 탐색 ──────────────────────────────────────────────────────────
