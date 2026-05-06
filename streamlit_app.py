@@ -1046,7 +1046,7 @@ def _render_stats_tab():
     all_genres = sorted(
         {g for kv in ranked for game in kv[1]
          for g in GAME_CATALOG.get(game.get("app_id"), {}).get("genres", [])}
-        | my_genre_set,
+        | set(my_genre_hrs),
         key=lambda g: my_genre_hrs.get(g, 0), reverse=True
     )[:8]
 
