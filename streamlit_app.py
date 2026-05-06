@@ -550,6 +550,8 @@ def _build_lightgcn_graph(steam_id, owned_games, rec_games):
     users     = list(all_interactions.keys())
     owned_ids = {g["app_id"] for g in owned_games}
     rec_ids   = {g["app_id"] for g in rec_games}
+    # rec_games의 name 필드 우선 사용 (GAME_CATALOG 미등록 게임 대응)
+    rec_name_map = {g["app_id"]: g.get("name", "") for g in rec_games}
 
     # 게임 분류: 추천 / 보유+기타
     rec_list   = sorted(rec_ids)
@@ -660,8 +662,9 @@ def _build_lightgcn_graph(steam_id, owned_games, rec_games):
     # ── 추천 게임 노드 (우측 열) — 세로로 정렬, 라벨 강조
     for aid in rec_list:
         gx, gy = rec_pos[aid]
-        name   = GAME_CATALOG.get(aid, {}).get("name", f"Game_{aid}")
-        genres = ", ".join(GAME_CATALOG.get(aid, {}).get("genres", [])[:2])
+        catalog = GAME_CATALOG.get(aid, {})
+        name    = rec_name_map.get(aid) or catalog.get("name") or f"Game_{aid}"
+        genres  = ", ".join(catalog.get("genres", [])[:2])
         fig.add_trace(go.Scatter(
             x=[gx], y=[gy], mode="markers+text",
             marker=dict(size=18, color="#FF5050", symbol="star",
