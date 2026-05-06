@@ -86,3 +86,31 @@
 | `d0efb4c` | Plotly `titlefont` 구버전 문법 → `title=dict()` 로 수정 |
 | `a43db42` | `_render_friend_comparison`에서 제거된 `my_gs`/`f_gs` 참조 수정 |
 | `7bb96df` | `_render_stats_tab`에서 제거된 `my_genre_set` 참조 수정 |
+
+---
+
+### 7. 장르별 탐색 기능 추가 (맞춤 추천 페이지 탭)
+
+- `data/popular_games.py` 신규 생성: 실제 Steam 인기작 약 120개 수록
+  - `_g(app_id, name, genres, rank)` 헬퍼로 간결하게 정의
+  - 중복 app_id 제거 로직 (최저 rank 우선)
+  - `ALL_GENRES` 20개 장르 리스트
+- 맞춤 추천 페이지에 **🎯 장르별 탐색** 탭 추가 (LightGCN 탭 우측)
+- `st.pills` 다중 선택 → AND 필터 (선택 장르 모두 포함한 게임만 표시)
+- 장르 미선택 시 전체 인기작 상위 24개 표시
+- 선택 조건에 맞는 게임 없으면 안내 메시지 출력
+- 실시간 Steam 가격/할인 정보 배치 조회 (`get_price_info_batch`)
+- 대시보드에 있던 장르 탐색 섹션 제거
+
+---
+
+### 8. 전체 추천 탭 UI 통일 (캐러셀 + 리뷰 패널)
+
+- 5개 탭 모두 `_render_carousel()` + `_show_reviews_panel()` 구조로 통일
+  - 장르 기반 추천, 유사 유저 기반, 숨겨진 명작, LightGCN 추천, 장르별 탐색
+- 장르별 탐색 탭: popular_games 데이터를 carousel 형식으로 변환
+  - `match_percent = 100 - rank` (인기 순위 역산)
+  - `reason = f"인기 순위 #{rank} · {장르 상위 2개}"`
+- 게임 카드 레이아웃 변경: **가로 스크롤 → 4열 wrap 그리드**
+  - `flex-wrap: wrap`, `width: calc(25% - 12px)`
+  - 행 수에 따라 컴포넌트 높이 동적 계산 (`rows * 330 + 40`)
