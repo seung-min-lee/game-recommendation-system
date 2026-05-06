@@ -1754,7 +1754,7 @@ def page_genre_explorer():
     )
     st.markdown(
         f'<div style="margin-bottom:16px;">{tag_html} '
-        f'<span style="color:#737373;font-size:0.85rem;margin-left:6px;">— {len(matched[:12])}개 게임</span></div>',
+        f'<span style="color:#737373;font-size:0.85rem;margin-left:6px;">— {len(matched[:24])}개 게임</span></div>',
         unsafe_allow_html=True,
     )
 
@@ -1764,7 +1764,7 @@ def page_genre_explorer():
         st.session_state[price_key] = {}
     cached: dict = st.session_state[price_key]
     uncached = [g["store_url"].split("/app/")[1].split("/")[0]
-                for g in matched[:12]
+                for g in matched[:24]
                 if int(g["store_url"].split("/app/")[1].split("/")[0]) not in cached]
     uncached_ids = [int(x) for x in uncached]
     if uncached_ids:
@@ -1776,7 +1776,7 @@ def page_genre_explorer():
         st.session_state[price_key] = cached
 
     # 4열 그리드 표시
-    display = matched[:12]
+    display = matched[:24]
     cols_per_row = 4
     for row_start in range(0, len(display), cols_per_row):
         row_games = display[row_start:row_start + cols_per_row]
