@@ -6,3 +6,4 @@ numpy
 requests
 aiohttp
 deep-translator
+scikit-learn
