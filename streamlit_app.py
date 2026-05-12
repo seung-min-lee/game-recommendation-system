@@ -1700,7 +1700,7 @@ def page_recommendations():
             g["price_info"] = cached_prices.get(g.get("app_id"))
         return games
 
-    tab1, tab2, tab3, tab4, tab5, tab6 = st.tabs(["🎮 장르 기반 추천", "👥 유사 유저 기반 추천", "💎 숨겨진 명작", "🕸️ LightGCN", "🎯 장르별 탐색", "🧠 취향 지도"])
+    tab1, tab2, tab3, tab4, tab5 = st.tabs(["🎮 장르 기반 추천", "👥 유사 유저 기반 추천", "💎 숨겨진 명작", "🕸️ LightGCN", "🎯 장르별 탐색"])
 
     with tab1:
         st.markdown('<h2 style="font-size:1.5rem;padding-left:10px;border-left:4px solid #E50914;">🎮 장르 기반 추천</h2>', unsafe_allow_html=True)
@@ -1744,9 +1744,6 @@ def page_recommendations():
         st.markdown('<h2 style="font-size:1.5rem;padding-left:10px;border-left:4px solid #E50914;">🎯 장르별 인기 게임 탐색</h2>', unsafe_allow_html=True)
         _render_genre_explorer_inline()
 
-    with tab6:
-        st.markdown('<h2 style="font-size:1.5rem;padding-left:10px;border-left:4px solid #7986cb;">🧠 취향 지도 (t-SNE 임베딩)</h2>', unsafe_allow_html=True)
-        _render_tsne_tab()
 
 
 
