@@ -1728,21 +1728,35 @@ def page_recommendations():
         _show_reviews_panel(graph_games, "graph")
 
         st.markdown("---")
-        with st.expander("🕸️ LightGCN 그래프 보기", expanded=False):
-            st.markdown(
-                '<p style="color:#b3b3b3;font-size:0.88rem;margin-bottom:12px;">'
-                'Graph Neural Network (SIGIR 2020) &nbsp;·&nbsp; '
-                '<span style="color:#FF6666;">● 빨간 별</span> = 추천 게임 &nbsp;|&nbsp; '
-                '<span style="color:#88AAFF;">■ 파란 사각형</span> = 내 보유 게임 &nbsp;|&nbsp; '
-                '<span style="color:#FFDD44;">● 노란선</span> = 타 유저 연결</p>',
-                unsafe_allow_html=True,
+        with st.expander("🔬 그래프 시각화", expanded=False):
+            viz_mode = st.radio(
+                "시각화 방식",
+                ["🕸️ 이분 그래프", "🧭 t-SNE 임베딩", "🗺️ UMAP 임베딩"],
+                horizontal=True,
+                key="lgcn_viz_mode",
+                label_visibility="collapsed",
             )
-            fig_graph = _build_lightgcn_graph(
-                st.session_state.steam_id,
-                st.session_state.owned_games or [],
-                graph_games,
-            )
-            st.plotly_chart(fig_graph, use_container_width=True)
+            st.markdown("<br>", unsafe_allow_html=True)
+
+            if viz_mode == "🕸️ 이분 그래프":
+                st.markdown(
+                    '<p style="color:#b3b3b3;font-size:0.85rem;margin-bottom:10px;">'
+                    'Graph Neural Network (SIGIR 2020) &nbsp;·&nbsp; '
+                    '<span style="color:#FF6666;">★ 빨간 별</span> = 추천 게임 &nbsp;|&nbsp; '
+                    '<span style="color:#88AAFF;">■ 파란 사각형</span> = 내 보유 게임 &nbsp;|&nbsp; '
+                    '<span style="color:#FFDD44;">— 노란선</span> = 타 유저 연결</p>',
+                    unsafe_allow_html=True,
+                )
+                fig_graph = _build_lightgcn_graph(
+                    st.session_state.steam_id,
+                    st.session_state.owned_games or [],
+                    graph_games,
+                )
+                st.plotly_chart(fig_graph, use_container_width=True)
+
+            else:
+                algo = "umap" if "UMAP" in viz_mode else "tsne"
+                _render_embedding_viz(algo, {g["app_id"] for g in graph_games})
 
     with tab5:
         st.markdown('<h2 style="font-size:1.5rem;padding-left:10px;border-left:4px solid #E50914;">🎯 장르별 인기 게임 탐색</h2>', unsafe_allow_html=True)
@@ -1751,41 +1765,56 @@ def page_recommendations():
 
 
 
-# ── t-SNE 취향 지도 ──────────────────────────────────────────────────────────
-def _render_tsne_tab():
+# ── 임베딩 시각화 (t-SNE / UMAP 공용) ───────────────────────────────────────
+def _render_embedding_viz(algo: str, rec_ids: set):
+    """
+    algo: "tsne" | "umap"
+    rec_ids: 현재 추천 게임 app_id 집합 — 강조 표시용
+    """
     from data.dummy_data import DUMMY_OWNED_GAMES, GAME_CATALOG
     import numpy as np
+    import pandas as pd
 
-    st.markdown(
-        '<p style="color:#b3b3b3;font-size:0.88rem;margin-bottom:8px;">'
-        '유저와 게임을 같은 임베딩 공간에 배치합니다. '
-        '<b style="color:#fff;">취향이 비슷할수록 가까이</b> 모입니다. '
-        '노드에 마우스를 올리면 상세 정보를 볼 수 있습니다.</p>',
-        unsafe_allow_html=True,
-    )
+    GENRE_COLOR = {
+        "Action": "#E50914", "RPG": "#46d369", "FPS": "#1db954",
+        "Shooter": "#2ecc71", "Adventure": "#3498db", "Strategy": "#9b59b6",
+        "Simulation": "#f39c12", "Sports": "#e67e22", "Horror": "#7f8c8d",
+        "Indie": "#1abc9c", "MOBA": "#e74c3c", "Survival": "#d35400",
+        "Puzzle": "#16a085", "Platformer": "#8e44ad", "Fighting": "#c0392b",
+        "Racing": "#2980b9", "Sandbox": "#27ae60", "Souls-like": "#c0392b",
+        "Open World": "#2471a3", "Multiplayer": "#1a5276",
+    }
 
     owned_games = st.session_state.owned_games or []
     steam_id    = st.session_state.steam_id or "me"
     username    = (st.session_state.user or {}).get("username", "나")
+    owned_ids   = {g["app_id"] for g in owned_games}
 
-    # ── 1. 전체 장르 목록 수집 ────────────────────────────────────────────────
-    all_genres = sorted({
-        g for info in GAME_CATALOG.values()
-        for g in info.get("genres", [])
-    })
+    algo_label = "UMAP" if algo == "umap" else "t-SNE"
+    st.markdown(
+        f'<p style="color:#b3b3b3;font-size:0.85rem;margin-bottom:10px;">'
+        f'<b style="color:#fff;">{algo_label}</b>로 유저·게임 임베딩을 2D에 투영합니다. '
+        f'취향이 비슷할수록 가까이 모이고, '
+        f'<span style="color:#FF6666;">⭐ 빨간 별</span>은 현재 추천 게임입니다.</p>',
+        unsafe_allow_html=True,
+    )
+
+    # ── 장르 목록 & 인덱스 ────────────────────────────────────────────────────
+    all_genres = sorted({g for info in GAME_CATALOG.values() for g in info.get("genres", [])})
     g_idx = {g: i for i, g in enumerate(all_genres)}
     dim = len(all_genres)
 
-    # ── 2. 유저 임베딩 (플레이타임 가중 장르 벡터) ───────────────────────────
-    all_users = {steam_id: owned_games, **DUMMY_OWNED_GAMES}
-    user_names_map = {
-        steam_id: f"⭐ {username}",
+    # ── 유저 임베딩 ───────────────────────────────────────────────────────────
+    dummy_names = {
         "76561198000000001": "GameMaster_KR",
         "76561198000000002": "ProGamer_Seoul",
         "76561198000000003": "IndieHunter",
         "76561198000000004": "RPGAddict_KR",
         "76561198000000005": "SurvivalKing",
     }
+    all_users = {steam_id: owned_games, **DUMMY_OWNED_GAMES}
+    user_names_map = {steam_id: f"⭐ {username}", **dummy_names}
+
     user_rows, user_labels, user_hovers = [], [], []
     for uid, games in all_users.items():
         vec = [0.0] * dim
@@ -1800,27 +1829,19 @@ def _render_tsne_tab():
         uname = user_names_map.get(uid, uid[-6:])
         user_labels.append(uname)
         total_hrs = round(sum(g.get("playtime_minutes", 0) for g in games) / 60)
-        top_genres = sorted(
-            {genre: sum(g.get("playtime_minutes", 0) / 60
-                        for g in games
-                        if genre in GAME_CATALOG.get(g.get("app_id"), {}).get("genres", []))
-             for genre in all_genres}.items(),
-            key=lambda x: -x[1]
+        top3 = sorted(
+            ((genre, sum(g.get("playtime_minutes", 0) / 60 for g in games
+                         if genre in GAME_CATALOG.get(g.get("app_id"), {}).get("genres", [])))
+             for genre in all_genres),
+            key=lambda x: -x[1],
         )[:3]
-        genre_str = " · ".join(f"{gn}({round(gh)}h)" for gn, gh in top_genres if gh > 0)
-        user_hovers.append(f"<b>{uname}</b><br>총 {total_hrs}시간<br>{genre_str}")
+        g_str = " · ".join(f"{gn}({round(gh)}h)" for gn, gh in top3 if gh > 0)
+        user_hovers.append(f"<b>{uname}</b><br>총 {total_hrs}시간<br>{g_str}")
 
-    # ── 3. 게임 임베딩 (장르 원-핫, 메타크리틱 가중) ─────────────────────────
-    GENRE_COLOR = {
-        "Action": "#E50914", "RPG": "#46d369", "FPS": "#1db954",
-        "Shooter": "#2ecc71", "Adventure": "#3498db", "Strategy": "#9b59b6",
-        "Simulation": "#f39c12", "Sports": "#e67e22", "Horror": "#7f8c8d",
-        "Indie": "#1abc9c", "MOBA": "#e74c3c", "Survival": "#d35400",
-        "Puzzle": "#16a085", "Platformer": "#8e44ad", "Fighting": "#c0392b",
-        "Racing": "#2980b9", "Sandbox": "#27ae60", "Souls-like": "#c0392b",
-        "Open World": "#2471a3", "Multiplayer": "#1a5276",
-    }
-    game_rows, game_point_labels, game_hovers, game_colors, game_sizes = [], [], [], [], []
+    # ── 게임 임베딩 ───────────────────────────────────────────────────────────
+    game_ids, game_rows, game_labels, game_hovers = [], [], [], []
+    game_colors, game_sizes, game_symbols = [], [], []
+
     for app_id, info in GAME_CATALOG.items():
         genres = info.get("genres", [])
         if not genres:
@@ -1830,160 +1851,222 @@ def _render_tsne_tab():
             if genre in g_idx:
                 vec[g_idx[genre]] = 1.0
         mc = info.get("metacritic") or 0
-        weight = (mc / 100.0) if mc else 0.5
-        vec = [v * weight for v in vec]
+        w = (mc / 100.0) if mc else 0.5
+        vec = [v * w for v in vec]
         norm = (sum(v * v for v in vec) ** 0.5) or 1.0
         vec = [v / norm for v in vec]
-        game_rows.append(vec)
-        game_point_labels.append(info["name"])
-        mc_str = f"MC {mc}" if mc else "MC -"
-        genre_str = ", ".join(genres[:3])
-        price = info.get("price", 0)
-        price_str = "무료" if price == 0 else f"₩{price:,}"
-        game_hovers.append(
-            f"<b>{info['name']}</b><br>{genre_str}<br>{mc_str} · {price_str}"
-        )
-        primary = genres[0] if genres else "Action"
-        game_colors.append(GENRE_COLOR.get(primary, "#888"))
-        game_sizes.append(10 + min(mc // 10, 8) if mc else 10)
 
-    # ── 4. PCA(10차원) → t-SNE(2D) ───────────────────────────────────────────
-    cache_key = "_tsne_cache"
+        game_ids.append(app_id)
+        game_rows.append(vec)
+        game_labels.append(info["name"])
+        mc_str   = f"MC {mc}" if mc else "MC -"
+        price    = info.get("price", 0)
+        p_str    = "무료" if price == 0 else f"₩{price:,}"
+        is_rec   = app_id in rec_ids
+        is_owned = app_id in owned_ids
+        tag = " 🔴추천" if is_rec else (" 🔵보유" if is_owned else "")
+        game_hovers.append(
+            f"<b>{info['name']}</b>{tag}<br>{', '.join(genres[:3])}<br>{mc_str} · {p_str}"
+        )
+        if is_rec:
+            game_colors.append("#FF4444")
+            game_sizes.append(18)
+            game_symbols.append("star")
+        elif is_owned:
+            game_colors.append("#5BA4FF")
+            game_sizes.append(13)
+            game_symbols.append("square")
+        else:
+            game_colors.append(GENRE_COLOR.get(genres[0], "#888"))
+            game_sizes.append(8 + min(mc // 12, 6) if mc else 8)
+            game_symbols.append("circle")
+
+    # ── PCA → 차원 축소 ───────────────────────────────────────────────────────
+    n_users  = len(user_rows)
+    all_vecs = np.array(user_rows + game_rows, dtype=np.float32)
+    cache_key = f"_embed_{algo}_cache"
+
     if cache_key not in st.session_state:
         st.session_state[cache_key] = None
 
-    n_users = len(user_rows)
-    all_vecs = np.array(user_rows + game_rows, dtype=np.float32)
-
     if st.session_state[cache_key] is None:
-        with st.spinner("t-SNE 임베딩 계산 중... (최초 1회)"):
+        spinner_msg = "UMAP 임베딩 계산 중..." if algo == "umap" else "t-SNE 임베딩 계산 중..."
+        with st.spinner(f"{spinner_msg} (최초 1회)"):
             try:
                 from sklearn.decomposition import PCA
-                from sklearn.manifold import TSNE
-                n_comp = min(10, all_vecs.shape[1], all_vecs.shape[0] - 1)
+                n_comp  = min(15, all_vecs.shape[1], all_vecs.shape[0] - 1)
                 reduced = PCA(n_components=n_comp).fit_transform(all_vecs)
-                perp = min(15, len(reduced) - 1)
-                coords = TSNE(
-                    n_components=2, perplexity=perp,
-                    random_state=42, max_iter=1000,
-                ).fit_transform(reduced)
+
+                if algo == "umap":
+                    import umap
+                    coords = umap.UMAP(
+                        n_components=2, n_neighbors=8, min_dist=0.3,
+                        random_state=42, metric="cosine",
+                    ).fit_transform(reduced)
+                else:
+                    from sklearn.manifold import TSNE
+                    perp   = min(15, len(reduced) - 1)
+                    coords = TSNE(
+                        n_components=2, perplexity=perp,
+                        random_state=42, max_iter=1000,
+                    ).fit_transform(reduced)
+
                 st.session_state[cache_key] = coords
-            except ImportError:
-                st.error("scikit-learn 패키지가 필요합니다. `pip install scikit-learn`")
+            except ImportError as e:
+                pkg = "umap-learn" if algo == "umap" else "scikit-learn"
+                st.error(f"`{pkg}` 패키지가 필요합니다: {e}")
                 return
-    else:
-        coords = st.session_state[cache_key]
 
     coords = st.session_state[cache_key]
     if coords is None:
         return
 
-    # ── 5. Plotly 시각화 ─────────────────────────────────────────────────────
+    # ── Plotly 시각화 ─────────────────────────────────────────────────────────
     fig = go.Figure()
 
-    # 게임 노드
-    fig.add_trace(go.Scatter(
-        x=coords[n_users:, 0], y=coords[n_users:, 1],
-        mode="markers",
-        marker=dict(
-            size=game_sizes, color=game_colors,
-            opacity=0.65, line=dict(width=0.4, color="#222"),
-        ),
-        text=game_point_labels,
-        hovertext=game_hovers,
-        hoverinfo="text",
-        name="게임",
-        showlegend=True,
-    ))
-
-    # 유저 노드 (별 모양, 크게)
-    is_me = [i for i, uid in enumerate(all_users) if uid == steam_id]
-    others = [i for i, uid in enumerate(all_users) if uid != steam_id]
-
-    if others:
+    # 일반 게임 (추천·보유 아닌 것)
+    norm_idx = [i for i, aid in enumerate(game_ids)
+                if aid not in rec_ids and aid not in owned_ids]
+    if norm_idx:
         fig.add_trace(go.Scatter(
-            x=coords[[i for i in others], 0],
-            y=coords[[i for i in others], 1],
+            x=[coords[n_users + i, 0] for i in norm_idx],
+            y=[coords[n_users + i, 1] for i in norm_idx],
+            mode="markers",
+            marker=dict(
+                size=[game_sizes[i] for i in norm_idx],
+                color=[game_colors[i] for i in norm_idx],
+                opacity=0.6, line=dict(width=0.3, color="#111"),
+            ),
+            hovertext=[game_hovers[i] for i in norm_idx],
+            hoverinfo="text", name="게임",
+        ))
+
+    # 내 보유 게임
+    own_idx = [i for i, aid in enumerate(game_ids) if aid in owned_ids and aid not in rec_ids]
+    if own_idx:
+        fig.add_trace(go.Scatter(
+            x=[coords[n_users + i, 0] for i in own_idx],
+            y=[coords[n_users + i, 1] for i in own_idx],
             mode="markers+text",
-            marker=dict(size=22, symbol="star", color="#f5c518",
+            marker=dict(size=[game_sizes[i] for i in own_idx], symbol="square",
+                        color="#5BA4FF", opacity=0.85,
+                        line=dict(width=1, color="rgba(180,220,255,0.5)")),
+            text=[game_labels[i][:12] for i in own_idx],
+            textposition="top center",
+            textfont=dict(size=8, color="#99BBFF"),
+            hovertext=[game_hovers[i] for i in own_idx],
+            hoverinfo="text", name="내 보유 게임",
+        ))
+
+    # 추천 게임 (글로우 + 별)
+    rec_idx = [i for i, aid in enumerate(game_ids) if aid in rec_ids]
+    if rec_idx:
+        # 글로우
+        fig.add_trace(go.Scatter(
+            x=[coords[n_users + i, 0] for i in rec_idx],
+            y=[coords[n_users + i, 1] for i in rec_idx],
+            mode="markers",
+            marker=dict(size=38, color="rgba(255,60,60,0.10)",
+                        symbol="circle", line=dict(width=0)),
+            hoverinfo="none", showlegend=False,
+        ))
+        # 별
+        fig.add_trace(go.Scatter(
+            x=[coords[n_users + i, 0] for i in rec_idx],
+            y=[coords[n_users + i, 1] for i in rec_idx],
+            mode="markers+text",
+            marker=dict(size=20, symbol="star", color="#FF4444",
+                        line=dict(width=2, color="#FFB0B0")),
+            text=[f"  {game_labels[i][:16]}" for i in rec_idx],
+            textposition="middle right",
+            textfont=dict(size=10, color="#FF9090"),
+            hovertext=[game_hovers[i] for i in rec_idx],
+            hoverinfo="text", name="⭐ 추천 게임",
+        ))
+
+    # 다른 유저
+    other_idx = [i for i, uid in enumerate(all_users) if uid != steam_id]
+    if other_idx:
+        fig.add_trace(go.Scatter(
+            x=[coords[i, 0] for i in other_idx],
+            y=[coords[i, 1] for i in other_idx],
+            mode="markers+text",
+            marker=dict(size=20, symbol="star", color="#f5c518",
                         line=dict(width=1.5, color="#fff")),
-            text=[user_labels[i] for i in others],
+            text=[user_labels[i] for i in other_idx],
             textposition="top center",
-            textfont=dict(color="#f5c518", size=11),
-            hovertext=[user_hovers[i] for i in others],
-            hoverinfo="text",
-            name="다른 유저",
+            textfont=dict(size=10, color="#f5c518"),
+            hovertext=[user_hovers[i] for i in other_idx],
+            hoverinfo="text", name="다른 유저",
         ))
 
-    if is_me:
-        i = is_me[0]
+    # 나
+    me_idx = [i for i, uid in enumerate(all_users) if uid == steam_id]
+    if me_idx:
+        mi = me_idx[0]
         fig.add_trace(go.Scatter(
-            x=[coords[i, 0]], y=[coords[i, 1]],
-            mode="markers+text",
-            marker=dict(size=32, symbol="star", color="#E50914",
-                        line=dict(width=2, color="#fff")),
-            text=[user_labels[i]],
-            textposition="top center",
-            textfont=dict(color="#E50914", size=13, family="Arial Black"),
-            hovertext=[user_hovers[i]],
-            hoverinfo="text",
-            name="나",
+            x=[coords[mi, 0]], y=[coords[mi, 1]], mode="markers",
+            marker=dict(size=48, color="rgba(229,9,20,0.12)",
+                        symbol="circle", line=dict(width=0)),
+            hoverinfo="none", showlegend=False,
+        ))
+        fig.add_trace(go.Scatter(
+            x=[coords[mi, 0]], y=[coords[mi, 1]], mode="markers+text",
+            marker=dict(size=30, symbol="star", color="#E50914",
+                        line=dict(width=2.5, color="white")),
+            text=[f"  {user_labels[mi]}"],
+            textposition="middle right",
+            textfont=dict(size=13, color="#FF6666", family="Arial Black"),
+            hovertext=[user_hovers[mi]], hoverinfo="text", name="나",
         ))
 
-    # 장르 범례용 더미 트레이스
-    shown = set()
-    for color, genre in zip(game_colors, [GAME_CATALOG[aid].get("genres", [""])[0]
-                                           for aid in GAME_CATALOG if GAME_CATALOG[aid].get("genres")]):
-        if genre not in shown:
-            shown.add(genre)
+    # 장르 범례
+    shown: set = set()
+    for i, aid in enumerate(game_ids):
+        if aid in rec_ids or aid in owned_ids:
+            continue
+        g0 = GAME_CATALOG.get(aid, {}).get("genres", [""])[0]
+        if g0 and g0 not in shown:
+            shown.add(g0)
             fig.add_trace(go.Scatter(
                 x=[None], y=[None], mode="markers",
-                marker=dict(size=10, color=GENRE_COLOR.get(genre, "#888")),
-                name=genre, showlegend=True,
+                marker=dict(size=9, color=GENRE_COLOR.get(g0, "#888")),
+                name=g0, showlegend=True,
             ))
 
     fig.update_layout(
-        height=680,
-        paper_bgcolor="#0e0e0e", plot_bgcolor="#141414",
+        height=700,
+        paper_bgcolor="#0e0e0e", plot_bgcolor="#111",
         font=dict(color="#ccc"),
-        xaxis=dict(showgrid=False, zeroline=False, showticklabels=False, title=""),
-        yaxis=dict(showgrid=False, zeroline=False, showticklabels=False, title=""),
-        legend=dict(
-            bgcolor="#1a1a1a", bordercolor="#333", borderwidth=1,
-            font=dict(size=11), itemsizing="constant",
-            x=1.01, y=1,
-        ),
-        hoverlabel=dict(bgcolor="#1a1a1a", font_color="#fff", bordercolor="#444"),
-        margin=dict(l=10, r=180, t=20, b=10),
+        xaxis=dict(showgrid=False, zeroline=False, showticklabels=False),
+        yaxis=dict(showgrid=False, zeroline=False, showticklabels=False),
+        legend=dict(bgcolor="#1a1a1a", bordercolor="#333", borderwidth=1,
+                    font=dict(size=10), itemsizing="constant", x=1.01, y=1),
+        hoverlabel=dict(bgcolor="#1a1a2e", font_color="#fff", bordercolor="#555"),
+        margin=dict(l=10, r=190, t=30, b=10),
         title=dict(
-            text="🧠 취향 지도 — 가까울수록 취향이 비슷함",
-            font=dict(size=15, color="#fff"), x=0.01,
+            text=f"{'🗺️ UMAP' if algo == 'umap' else '🧭 t-SNE'} — 가까울수록 취향이 비슷함",
+            font=dict(size=14, color="#ccc"), x=0.01,
         ),
     )
-
     st.plotly_chart(fig, use_container_width=True)
 
-    # ── 6. 유저 간 유사도 테이블 ─────────────────────────────────────────────
-    st.markdown("#### 🎯 나와 취향이 비슷한 유저 순위")
-    my_vec_dict = _genre_vector(owned_games, GAME_CATALOG)
-    sim_rows = []
+    # ── 유저 유사도 테이블 ────────────────────────────────────────────────────
+    st.markdown("##### 🎯 나와 취향이 비슷한 유저 순위")
+    my_vec = _genre_vector(owned_games, GAME_CATALOG)
+    rows = []
     for uid, games in DUMMY_OWNED_GAMES.items():
-        f_vec = _genre_vector(games, GAME_CATALOG)
-        sim = round(_cosine_sim(my_vec_dict, f_vec) * 100, 1)
-        top3 = sorted(f_vec.items(), key=lambda x: -x[1])[:3]
-        top_str = " · ".join(g for g, _ in top3)
-        sim_rows.append({
-            "유저": user_names_map.get(uid, uid[-6:]),
+        fv  = _genre_vector(games, GAME_CATALOG)
+        sim = round(_cosine_sim(my_vec, fv) * 100, 1)
+        top3 = sorted(fv.items(), key=lambda x: -x[1])[:3]
+        rows.append({
+            "유저": dummy_names.get(uid, uid[-6:]),
             "유사도": f"{sim}%",
-            "주요 장르": top_str,
-            "보유 게임 수": len(games),
+            "주요 장르": " · ".join(g for g, _ in top3),
+            "보유 게임": len(games),
         })
-    sim_rows.sort(key=lambda r: -float(r["유사도"].replace("%", "")))
-    import pandas as pd
-    st.dataframe(
-        pd.DataFrame(sim_rows),
-        use_container_width=True, hide_index=True,
-    )
+    rows.sort(key=lambda r: -float(r["유사도"].replace("%", "")))
+    st.dataframe(pd.DataFrame(rows), use_container_width=True, hide_index=True)
 
 
 # ── 장르 탐색 공통 렌더러 (탭 내 인라인용) ─────────────────────────────────────
