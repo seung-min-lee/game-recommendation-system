@@ -138,6 +138,63 @@ def _cosine_sim(vec_a: dict[str, float], vec_b: dict[str, float]) -> float:
     return sum(vec_a.get(g, 0.0) * vec_b.get(g, 0.0) for g in vec_a)
 
 
+def _fetch_graph_users(steam_id: str) -> dict[str, list[dict]]:
+    """
+    그래프/임베딩에 쓸 주변 유저 게임 데이터를 가져옴.
+    1) Steam 친구 목록 (공개된 경우, 최대 15명)
+    2) 유명 공개 유저 고정 목록 (최대 10명)
+    결과를 세션에 캐시. API 키 없거나 모두 비공개면 DUMMY_OWNED_GAMES 폴백.
+    """
+    cache_key = "_graph_users_cache"
+    if cache_key in st.session_state and st.session_state[cache_key]:
+        return st.session_state[cache_key]
+
+    from data.public_users import KNOWN_PUBLIC_USERS
+    from data.dummy_data import DUMMY_OWNED_GAMES
+    import concurrent.futures
+
+    result: dict[str, list[dict]] = {}
+
+    def _fetch_games(uid: str) -> tuple[str, list[dict]]:
+        games = steam.get_owned_games(uid)
+        return uid, games
+
+    target_ids = list(KNOWN_PUBLIC_USERS.keys())
+
+    # 친구 목록 추가 (공개인 경우)
+    friend_ids = steam.get_friend_list(steam_id)
+    target_ids = list(set(target_ids + friend_ids[:15]))
+    # 자기 자신 제외
+    target_ids = [uid for uid in target_ids if uid != steam_id]
+
+    if target_ids:
+        with st.spinner(f"유저 데이터 수집 중... ({len(target_ids)}명)"):
+            with concurrent.futures.ThreadPoolExecutor(max_workers=8) as ex:
+                futures = {ex.submit(_fetch_games, uid): uid for uid in target_ids}
+                done, _ = concurrent.futures.wait(futures, timeout=20)
+                for fut in done:
+                    uid, games = fut.result()
+                    if games:
+                        result[uid] = games
+
+    # 가져온 유저가 너무 적으면 더미 폴백 병합
+    if len(result) < 3:
+        result = {**DUMMY_OWNED_GAMES, **result}
+
+    # 표시 이름 세션에도 저장
+    name_map: dict[str, str] = {**KNOWN_PUBLIC_USERS}
+    if friend_ids:
+        profiles = steam.get_friends_profiles(
+            [uid for uid in result if uid not in KNOWN_PUBLIC_USERS]
+        )
+        for uid, p in profiles.items():
+            name_map[uid] = p.get("username", f"User_{uid[-4:]}")
+
+    st.session_state[cache_key]        = result
+    st.session_state["_graph_user_names"] = name_map
+    return result
+
+
 def _get_recs(steam_id, owned_games, friends_games=None):
     if _snowflake_ok:
         try:
@@ -560,11 +617,12 @@ def _carousel_html(games: list) -> str:
 
 # ── LightGCN 그래프 ────────────────────────────────────────────────────────────
 def _build_lightgcn_graph(steam_id, owned_games, rec_games):
-    from data.dummy_data import DUMMY_OWNED_GAMES, GAME_CATALOG
+    from data.dummy_data import GAME_CATALOG
     import math
 
+    graph_users = _fetch_graph_users(steam_id)
     all_interactions = {}
-    for uid, games in DUMMY_OWNED_GAMES.items():
+    for uid, games in graph_users.items():
         all_interactions[uid] = {g["app_id"]: g.get("playtime_minutes", 1) for g in games}
     all_interactions[steam_id] = {g["app_id"]: g.get("playtime_minutes", 1) for g in owned_games}
 
@@ -651,7 +709,8 @@ def _build_lightgcn_graph(steam_id, owned_games, rec_games):
     # ── 노드: 다른 유저 (한 trace)
     other_ux = [user_pos[u][0] for u in users if u != steam_id]
     other_uy = [user_pos[u][1] for u in users if u != steam_id]
-    other_unames = [f"User_{u[-4:]}" for u in users if u != steam_id]
+    _gname = st.session_state.get("_graph_user_names", {})
+    other_unames = [_gname.get(u, f"User_{u[-4:]}") for u in users if u != steam_id]
     other_ucounts = [len(all_interactions[u]) for u in users if u != steam_id]
     if other_ux:
         fig.add_trace(go.Scatter(
@@ -1731,14 +1790,14 @@ def page_recommendations():
         with st.expander("🔬 그래프 시각화", expanded=False):
             viz_mode = st.radio(
                 "시각화 방식",
-                ["🕸️ 이분 그래프", "🧭 t-SNE 임베딩", "🗺️ UMAP 임베딩"],
+                ["🕸️ LightGCN", "🧭 t-SNE 임베딩", "🗺️ UMAP 임베딩"],
                 horizontal=True,
                 key="lgcn_viz_mode",
                 label_visibility="collapsed",
             )
             st.markdown("<br>", unsafe_allow_html=True)
 
-            if viz_mode == "🕸️ 이분 그래프":
+            if viz_mode == "🕸️ LightGCN":
                 st.markdown(
                     '<p style="color:#b3b3b3;font-size:0.85rem;margin-bottom:10px;">'
                     'Graph Neural Network (SIGIR 2020) &nbsp;·&nbsp; '
@@ -1805,15 +1864,11 @@ def _render_embedding_viz(algo: str, rec_ids: set):
     dim = len(all_genres)
 
     # ── 유저 임베딩 ───────────────────────────────────────────────────────────
-    dummy_names = {
-        "76561198000000001": "GameMaster_KR",
-        "76561198000000002": "ProGamer_Seoul",
-        "76561198000000003": "IndieHunter",
-        "76561198000000004": "RPGAddict_KR",
-        "76561198000000005": "SurvivalKing",
-    }
-    all_users = {steam_id: owned_games, **DUMMY_OWNED_GAMES}
-    user_names_map = {steam_id: f"⭐ {username}", **dummy_names}
+    graph_users    = _fetch_graph_users(steam_id)
+    stored_names   = st.session_state.get("_graph_user_names", {})
+    all_users      = {steam_id: owned_games, **graph_users}
+    user_names_map = {steam_id: f"⭐ {username}",
+                      **{uid: stored_names.get(uid, f"User_{uid[-4:]}") for uid in graph_users}}
 
     user_rows, user_labels, user_hovers = [], [], []
     for uid, games in all_users.items():
@@ -2055,12 +2110,12 @@ def _render_embedding_viz(algo: str, rec_ids: set):
     st.markdown("##### 🎯 나와 취향이 비슷한 유저 순위")
     my_vec = _genre_vector(owned_games, GAME_CATALOG)
     rows = []
-    for uid, games in DUMMY_OWNED_GAMES.items():
+    for uid, games in graph_users.items():
         fv  = _genre_vector(games, GAME_CATALOG)
         sim = round(_cosine_sim(my_vec, fv) * 100, 1)
         top3 = sorted(fv.items(), key=lambda x: -x[1])[:3]
         rows.append({
-            "유저": dummy_names.get(uid, uid[-6:]),
+            "유저": user_names_map.get(uid, uid[-6:]),
             "유사도": f"{sim}%",
             "주요 장르": " · ".join(g for g, _ in top3),
             "보유 게임": len(games),
