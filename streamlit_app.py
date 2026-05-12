@@ -1722,23 +1722,27 @@ def page_recommendations():
 
     with tab4:
         st.markdown('<h2 style="font-size:1.5rem;padding-left:10px;border-left:4px solid #E50914;">🕸️ LightGCN 그래프 추천</h2>', unsafe_allow_html=True)
-        st.markdown(
-            '<p style="color:#b3b3b3;font-size:0.9rem;margin-bottom:16px;">'
-            'Graph Neural Network (SIGIR 2020) · '
-            '<span style="color:#E50914;">빨간 별</span> = 추천 게임 &nbsp;|&nbsp; '
-            '<span style="color:#fff;">흰 사각형</span> = 보유 게임</p>',
-            unsafe_allow_html=True,
-        )
+
         graph_games = _inject_price(recs.get("graph_based", []))
-        fig_graph = _build_lightgcn_graph(
-            st.session_state.steam_id,
-            st.session_state.owned_games or [],
-            graph_games,
-        )
-        st.plotly_chart(fig_graph, use_container_width=True)
-        st.markdown("---")
         _render_carousel(graph_games)
         _show_reviews_panel(graph_games, "graph")
+
+        st.markdown("---")
+        with st.expander("🕸️ LightGCN 그래프 보기", expanded=False):
+            st.markdown(
+                '<p style="color:#b3b3b3;font-size:0.88rem;margin-bottom:12px;">'
+                'Graph Neural Network (SIGIR 2020) &nbsp;·&nbsp; '
+                '<span style="color:#FF6666;">● 빨간 별</span> = 추천 게임 &nbsp;|&nbsp; '
+                '<span style="color:#88AAFF;">■ 파란 사각형</span> = 내 보유 게임 &nbsp;|&nbsp; '
+                '<span style="color:#FFDD44;">● 노란선</span> = 타 유저 연결</p>',
+                unsafe_allow_html=True,
+            )
+            fig_graph = _build_lightgcn_graph(
+                st.session_state.steam_id,
+                st.session_state.owned_games or [],
+                graph_games,
+            )
+            st.plotly_chart(fig_graph, use_container_width=True)
 
     with tab5:
         st.markdown('<h2 style="font-size:1.5rem;padding-left:10px;border-left:4px solid #E50914;">🎯 장르별 인기 게임 탐색</h2>', unsafe_allow_html=True)
