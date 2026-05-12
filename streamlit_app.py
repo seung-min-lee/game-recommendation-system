@@ -141,56 +141,52 @@ def _cosine_sim(vec_a: dict[str, float], vec_b: dict[str, float]) -> float:
 def _fetch_graph_users(steam_id: str) -> dict[str, list[dict]]:
     """
     그래프/임베딩에 쓸 주변 유저 게임 데이터를 가져옴.
-    1) Steam 친구 목록 (공개된 경우, 최대 15명)
-    2) 유명 공개 유저 고정 목록 (최대 10명)
-    결과를 세션에 캐시. API 키 없거나 모두 비공개면 DUMMY_OWNED_GAMES 폴백.
+    우선순위:
+      1) 하드코딩 기본 게임 목록 (항상 보장)
+      2) Steam API 실제 데이터로 덮어쓰기 (API 키 있고 프로필 공개인 경우)
+      3) 로그인 유저의 Steam 친구 목록 추가
     """
     cache_key = "_graph_users_cache"
     if cache_key in st.session_state and st.session_state[cache_key]:
         return st.session_state[cache_key]
 
-    from data.public_users import KNOWN_PUBLIC_USERS
-    from data.dummy_data import DUMMY_OWNED_GAMES
+    from data.public_users import KNOWN_PUBLIC_USERS, KNOWN_PUBLIC_GAMES
     import concurrent.futures
 
-    result: dict[str, list[dict]] = {}
+    # ── 1. 하드코딩 기본값으로 초기화 (항상 보장) ────────────────────────────
+    result: dict[str, list[dict]] = {**KNOWN_PUBLIC_GAMES}
+    name_map: dict[str, str]      = {**KNOWN_PUBLIC_USERS}
 
-    def _fetch_games(uid: str) -> tuple[str, list[dict]]:
-        games = steam.get_owned_games(uid)
-        return uid, games
-
-    target_ids = list(KNOWN_PUBLIC_USERS.keys())
-
-    # 친구 목록 추가 (공개인 경우)
+    # ── 2. API로 실제 데이터 덮어쓰기 시도 ───────────────────────────────────
     friend_ids = steam.get_friend_list(steam_id)
-    target_ids = list(set(target_ids + friend_ids[:15]))
-    # 자기 자신 제외
-    target_ids = [uid for uid in target_ids if uid != steam_id]
+    api_targets = list(set(list(KNOWN_PUBLIC_USERS.keys()) + friend_ids[:15]))
+    api_targets = [uid for uid in api_targets if uid != steam_id]
 
-    if target_ids:
-        with st.spinner(f"유저 데이터 수집 중... ({len(target_ids)}명)"):
+    if api_targets:
+        def _fetch_one(uid: str) -> tuple[str, list[dict]]:
+            return uid, steam.get_owned_games(uid)
+
+        with st.spinner(f"Steam 유저 데이터 업데이트 중... ({len(api_targets)}명)"):
             with concurrent.futures.ThreadPoolExecutor(max_workers=8) as ex:
-                futures = {ex.submit(_fetch_games, uid): uid for uid in target_ids}
+                futures = {ex.submit(_fetch_one, uid): uid for uid in api_targets}
                 done, _ = concurrent.futures.wait(futures, timeout=20)
                 for fut in done:
                     uid, games = fut.result()
-                    if games:
+                    if games:                        # 실제 데이터 있으면 덮어씀
                         result[uid] = games
 
-    # 가져온 유저가 너무 적으면 더미 폴백 병합
-    if len(result) < 3:
-        result = {**DUMMY_OWNED_GAMES, **result}
-
-    # 표시 이름 세션에도 저장
-    name_map: dict[str, str] = {**KNOWN_PUBLIC_USERS}
-    if friend_ids:
-        profiles = steam.get_friends_profiles(
-            [uid for uid in result if uid not in KNOWN_PUBLIC_USERS]
-        )
+    # ── 3. 친구 실제 이름 조회 ────────────────────────────────────────────────
+    new_friend_ids = [uid for uid in result if uid not in KNOWN_PUBLIC_USERS and uid != steam_id]
+    if new_friend_ids:
+        profiles = steam.get_friends_profiles(new_friend_ids)
         for uid, p in profiles.items():
             name_map[uid] = p.get("username", f"User_{uid[-4:]}")
+            if uid not in result:
+                games = steam.get_owned_games(uid)
+                if games:
+                    result[uid] = games
 
-    st.session_state[cache_key]        = result
+    st.session_state[cache_key]           = result
     st.session_state["_graph_user_names"] = name_map
     return result
 
@@ -1788,13 +1784,21 @@ def page_recommendations():
 
         st.markdown("---")
         with st.expander("🔬 그래프 시각화", expanded=False):
-            viz_mode = st.radio(
-                "시각화 방식",
-                ["🕸️ LightGCN", "🧭 t-SNE 임베딩", "🗺️ UMAP 임베딩"],
-                horizontal=True,
-                key="lgcn_viz_mode",
-                label_visibility="collapsed",
-            )
+            rc1, rc2 = st.columns([5, 1])
+            with rc1:
+                viz_mode = st.radio(
+                    "시각화 방식",
+                    ["🕸️ LightGCN", "🧭 t-SNE 임베딩", "🗺️ UMAP 임베딩"],
+                    horizontal=True,
+                    key="lgcn_viz_mode",
+                    label_visibility="collapsed",
+                )
+            with rc2:
+                if st.button("🔄 유저 새로고침", key="graph_user_refresh"):
+                    for k in ["_graph_users_cache", "_graph_user_names",
+                              "_embed_tsne_cache", "_embed_umap_cache"]:
+                        st.session_state.pop(k, None)
+                    st.rerun()
             st.markdown("<br>", unsafe_allow_html=True)
 
             if viz_mode == "🕸️ LightGCN":
