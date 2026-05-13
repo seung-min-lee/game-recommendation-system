@@ -138,7 +138,162 @@
 
 ---
 
-### 5. 버그 수정 및 커밋 이력 (7주차 이월 포함)
+### 5. 알고리즘 수정 및 추가
+
+---
+
+#### 5-1. 유사도 계산 알고리즘 변경 (Jaccard → 플레이타임 가중 코사인 유사도)
+
+- **변경 배경**
+  - 기존 Jaccard 유사도: 장르 보유 여부(0/1)만 반영 → 플레이 1시간과 1,000시간을 동일하게 처리하는 문제
+  - 플레이타임 비중이 클수록 해당 장르 선호도가 높다는 점을 반영하지 못함
+- **변경 내용**
+  - `_genre_vector(games)` 함수 신설
+    - 입력: 유저 보유 게임 리스트 (app_id, playtime_minutes, genres 포함)
+    - 처리: 각 게임의 장르별로 플레이타임을 누적 합산하여 장르 벡터 생성
+    - 출력: `{장르명: 누적 플레이타임}` 형태의 딕셔너리
+  - `_cosine_sim(v1, v2)` 함수 신설
+    - 입력: 두 유저의 장르 벡터
+    - 처리: 공통 장르 키 기준 내적 계산 → L2 노름으로 나눠 코사인 유사도 산출
+    - 출력: 0.0 ~ 1.0 사이의 유사도 값 (1에 가까울수록 취향 유사)
+  - 예시: 내가 FPS 장르에 500시간, 친구가 FPS 장르에 480시간 플레이 시 → 높은 코사인 유사도 산출
+- **적용 범위**
+  - 사이드바 친구 목록 정렬 기준 (유사도 내림차순)
+  - 사이드바 친구 카드 유사도 % 표시
+  - 나 & 친구 통계 탭 친구 랭킹
+  - 친구 1:1 비교 패널 장르 유사도 헤더
+
+---
+
+#### 5-2. LightGCN 그래프 알고리즘 — 플레이타임 가중 엣지 및 시각화 개선
+
+- **LightGCN 개요**
+  - Light Graph Convolutional Network (SIGIR 2020) 기반 협업 필터링
+  - 유저-게임 이분 그래프(Bipartite Graph) 구조: 유저 노드와 게임 노드를 엣지로 연결
+  - 그래프 상에서 메시지 전파(Message Passing)를 통해 유저·게임 임베딩 학습
+  - 학습된 임베딩 내적으로 미소유 게임 추천 점수 산출
+
+- **플레이타임 가중 엣지 (`log1p` 정규화)**
+  - 변경 전: 유저-게임 연결 엣지 두께 모두 동일 → 캐주얼 플레이어와 헤비 플레이어 구분 불가
+  - 변경 후: 플레이타임에 `log1p` 함수 적용 후 최대값으로 정규화 → 엣지 두께를 0.5 ~ 4.0 범위로 차등 표현
+  - `log1p` 사용 이유: 플레이타임 분포가 극단적으로 치우쳐 있어 로그 스케일로 완화 (예: 1시간과 10,000시간 차이를 선형 그대로 쓰면 시각적 구분 불가)
+  - 수식: `edge_width = 0.5 + 3.5 * (log1p(playtime) / log1p(max_playtime))`
+
+- **Batch Trace 렌더링 최적화**
+  - 변경 전: 엣지·노드 각각 개별 Plotly trace 생성 → 유저 10명 × 게임 50개 = 수백 개 trace → 렌더링 지연 심각
+  - 변경 후: 엣지를 연결 유형별 3개 batch trace로 통합
+    - 타 유저 연결 엣지: `rgba(255,220,50,0.35)` 노란색 반투명
+    - 내 보유 게임 연결 엣지: `rgba(120,180,255,0.70)` 파란색
+    - 내 추천 게임 연결 엣지: `rgba(255,80,80,0.90)` 빨간색 강조
+  - 노드도 유형별 batch scatter trace로 통합 (유저·보유 게임·추천 게임·기타 게임 4종)
+
+- **Glow 이중 레이어 효과**
+  - 추천 게임 엣지에 반투명 두꺼운 선(width=8, opacity=0.3) + 불투명 얇은 선(width=2, opacity=0.9) 중첩
+  - 배경색 `#0e0e0e` 적용으로 glow 대비 극대화
+  - 추천 게임 노드: 빨간 별(⭐) 라벨로 일반 게임과 시각적 구분
+
+- **3열 컬럼 레이아웃**
+  - `x=0`: 유저 노드 (세로 균등 배치)
+  - `x=1`: 보유 게임 및 기타 게임 노드
+  - `x=2`: 추천 게임 노드 (우측 분리, 세로 균등 배치)
+  - 컬럼 구분선(`shapes`) 추가로 이분 그래프 구조 시각적 명확화
+
+---
+
+#### 5-3. t-SNE / UMAP 임베딩 분포 시각화 알고리즘
+
+- **목적**
+  - LightGCN이 학습한 게임 임베딩 벡터를 2차원으로 투영하여 게임 간 유사도 분포를 직관적으로 시각화
+  - 추천 게임이 취향 군집 내에 위치하는지 확인 → 추천 결과의 신뢰성 시각적 검증
+
+- **처리 파이프라인**
+  - ① 게임별 임베딩 벡터 수집 (장르·태그 기반 원-핫 인코딩 또는 LightGCN 학습 임베딩)
+  - ② `sklearn.decomposition.PCA`: 고차원 벡터 → 15차원으로 선압축
+    - 이유: t-SNE·UMAP에 고차원 직접 입력 시 계산량 폭증 및 노이즈 증가 방지
+  - ③-A `sklearn.manifold.TSNE`: 15차원 → 2차원 (perplexity=30, n_iter=300)
+    - t-SNE 특성: 국소 구조(가까운 점들의 군집) 보존에 강점, 전역 구조는 상대적으로 약함
+  - ③-B `umap.UMAP`: 15차원 → 2차원 (n_neighbors=15, min_dist=0.1)
+    - UMAP 특성: 전역·국소 구조 동시 보존, 대규모 데이터 처리 속도 t-SNE 대비 우수
+
+- **시각화 구현 (`_render_embedding_viz`)**
+  - 노드 유형별 시각적 구분
+    - 추천 게임: 빨간 별 마커 + glow 원형 후광 오버레이
+    - 보유 게임: 파란 사각형 마커
+    - 일반 게임: 장르별 색상 원형 마커 (20개 장르 색상 팔레트)
+  - 호버 툴팁: 게임명·장르·플레이타임 표시
+  - 하단에 유사 유저 유사도 순위 테이블 병기
+
+- **세션 캐시 분리**
+  - `st.session_state["_embed_tsne_cache"]`: t-SNE 결과 저장
+  - `st.session_state["_embed_umap_cache"]`: UMAP 결과 저장
+  - 알고리즘 전환 시 기존 캐시 재사용으로 재계산 방지
+
+- **UI 전환 구조**
+  - LightGCN expander 내 라디오 버튼: `🕸️ LightGCN | 🧭 t-SNE | 🗺️ UMAP`
+  - 선택에 따라 `_build_lightgcn_graph()` 또는 `_render_embedding_viz(algo)` 분기 호출
+
+---
+
+#### 5-4. 추천 알고리즘 4종 구조 및 일치도 표시 통일
+
+- **장르 기반 추천 (CBF)**
+  - 유저 플레이타임 기반 상위 선호 장르 추출
+  - Snowflake Gold 레이어 `recommend_cbf` 모델 결과 활용
+  - 장르 가중치 = 해당 장르 총 플레이타임 / 전체 플레이타임
+  - 미소유 게임 중 선호 장르 일치 점수 합산 Top 10 반환
+
+- **유사 유저 기반 추천 (협업 필터링)**
+  - Snowflake Gold 레이어 `recommend_cf` 모델 결과 활용
+  - Jaccard 유사도로 유사 유저 선별 → 해당 유저들의 보유 게임 중 내 미소유 게임 score 합산
+  - `QUALIFY ROW_NUMBER() OVER (PARTITION BY steam_id ORDER BY score DESC) <= 10`
+
+- **숨겨진 명작 (Hidden Gems)**
+  - 조건 ①: 내 선호 장르 Top 3에 포함
+  - 조건 ②: Metacritic 점수 ≥ 87
+  - 조건 ③: 미소유 게임
+  - score = 장르 매칭 수 × (metacritic / 100.0) → Top 10 반환
+
+- **LightGCN 추천**
+  - 유저-게임 이분 그래프에서 그래프 합성곱 레이어로 임베딩 전파
+  - 최종 유저 임베딩과 미소유 게임 임베딩의 내적 → 추천 점수 산출
+
+- **4종 탭 공통 UI 통일**
+  - 모든 탭: `_render_carousel()` + `_show_reviews_panel()` 구조로 통일
+  - 각 게임 카드: 일치도(match_percent) / 할인율 / Steam 스토어 이동 버튼 표시
+  - 게임 카드 레이아웃: 4열 flex-wrap 그리드 (`width: calc(25% - 12px)`)
+
+---
+
+#### 5-5. 그래프 유저 선정 알고리즘 (Fallback 우선순위 로직)
+
+- **문제**
+  - shroud·Ninja·Pokimane 등 유명 스트리머 Steam 프로필 비공개 설정
+  - `get_owned_games(steam_id)` API 호출 시 빈 배열 반환
+  - 유효 유저 3명 미만 → LightGCN 그래프 렌더링 불가
+  - 기존 더미 데이터(DUMMY_OWNED_GAMES)로 폴백 시 실제 유저처럼 보이지 않는 문제
+
+- **해결 — `data/public_users.py` 신규 생성**
+  - `KNOWN_PUBLIC_USERS`: 10명 스트리머 Steam ID → 표시 이름 딕셔너리
+    - shroud, summit1g, Lirik, Sodapoppin, xQc, TimTheTatman, Pokimane, Ninja, GabeN, CohhCarnage
+  - `KNOWN_PUBLIC_GAMES`: 스트리머별 실제 활동 기반 플레이타임 추정 하드코딩
+    - 예) shroud: CS2(85,000분), PUBG(32,000분), Apex(18,000분), R6S(12,000분)
+    - 예) Pokimane: Stardew Valley(15,000분), Hollow Knight(8,000분), Hades(6,000분)
+    - 예) CohhCarnage: Witcher 3(30,000분), BG3(25,000분), Cyberpunk(20,000분)
+
+- **`_fetch_graph_users(steam_id)` 우선순위 로직**
+  - ① `result = {**KNOWN_PUBLIC_GAMES}` — 하드코딩 데이터를 기본값으로 먼저 적재
+  - ② Steam API `get_owned_games(uid)` 호출 — 성공(비공개 아님) 시 `result[uid]` 덮어쓰기
+  - ③ 로그인 유저 친구 목록 `get_friend_list()` 조회 → 친구 게임도 API 호출 후 병합
+  - ④ 최종 유저 풀: 하드코딩 스트리머 10명 + API 성공 친구들 혼합
+  - ⑤ 결과 `st.session_state["_graph_users_cache"]` 저장 → 재접근 시 재호출 방지
+
+- **🔄 유저 새로고침 버튼**
+  - `st.session_state["_graph_users_cache"]` 및 `st.session_state["_graph_user_names"]` 삭제
+  - 버튼 클릭 시 즉시 `st.rerun()` 호출 → 최신 데이터로 그래프 재구성
+
+---
+
+### 6. 버그 수정 및 커밋 이력 (7주차 이월 포함)
 
 | 커밋 | 내용 |
 |---|---|
